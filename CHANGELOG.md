@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased (native Lunaris migration)
+
+- Converted the plugin host from BepInEx (`BaseUnityPlugin`/`[BepInPlugin]`/`[BepInProcess]`) to
+  native Lunaris (`LunarisPlugin`/`[LunarisPlugin]`/`[LunarisPermission(FileAccess)]`). No
+  Harmony, Reflection, or Network permission requested — this mod patches no game methods, uses
+  no reflection, and makes no network calls.
+  There is no chat-command interception in this mod (UI-button-only, no global hotkey), so
+  nothing here changes command syntax.
+- Config replaced `ConfigEntry<T>`/`Config.Bind` with native typed Lunaris config
+  (`JournalSettings`); all 6 existing settings (section/key/default/description) preserved
+  unchanged behind a loader-neutral `JournalConfigEntry<T>` shim.
+- Logging replaced `BepInEx.Logging`/`ManualLogSource` with native Lunaris `Logging`.
+- Local journal storage moved from `BepInEx/config/ErenshorJournal/` to
+  `plugins/config/ErenshorJournal/` (`Paths.ConfigPath` was BepInEx-specific).
+- `BUILD_AND_INSTALL.ps1`/`UNINSTALL.ps1` now target `<Erenshor>\plugins` instead of a BepInEx
+  profile and no longer require `BepInEx.dll`.
+
 ## 0.1.2 - UI consistency pass
 
 - removed the global keyboard-toggle path entirely; Journal now opens/closes from UI only;

@@ -1,25 +1,27 @@
 using System;
 using System.IO;
-using BepInEx;
-using BepInEx.Configuration;
+using Lunaris;
+using Lunaris.Config;
 using UnityEngine;
 
 namespace ErenshorJournal
 {
-    [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
-    [BepInProcess("Erenshor.exe")]
-    public sealed class ErenshorJournalPlugin : BaseUnityPlugin
+    [LunarisPlugin(PluginGuid, PluginVersion, "forgetwhtuno",
+        "A small local, freeform player notebook with an optional Chronicle sink for verified events from other mods.")]
+    [LunarisPermission(LunarisPermission.FileAccess)]
+    public sealed class ErenshorJournalPlugin : LunarisPlugin
     {
         internal const string PluginGuid = "forgetwhtuno.erenshor.journal";
         internal const string PluginName = "Erenshor Journal";
         internal const string PluginVersion = "0.1.2";
 
-        private ConfigEntry<float> _launcherX;
-        private ConfigEntry<float> _launcherY;
-        private ConfigEntry<float> _windowX;
-        private ConfigEntry<float> _windowY;
-        private ConfigEntry<float> _windowWidth;
-        private ConfigEntry<float> _windowHeight;
+        private JournalSettings _settings;
+        private JournalConfigEntry<float> _launcherX;
+        private JournalConfigEntry<float> _launcherY;
+        private JournalConfigEntry<float> _windowX;
+        private JournalConfigEntry<float> _windowY;
+        private JournalConfigEntry<float> _windowWidth;
+        private JournalConfigEntry<float> _windowHeight;
 
         private JournalStore _store;
         private JournalDocument _document;
@@ -37,26 +39,31 @@ namespace ErenshorJournal
 
         private void Awake()
         {
-            _launcherX = Config.Bind("UI", "LauncherX", -1f,
-                "Saved launcher X position. -1 places it near the right side of the screen on first use.");
-            _launcherY = Config.Bind("UI", "LauncherY", -1f,
-                "Saved launcher Y position. -1 vertically centers it on first use.");
-            _windowX = Config.Bind("UI", "WindowX", -1f, "Saved journal window X position. -1 centers the window on first use.");
-            _windowY = Config.Bind("UI", "WindowY", -1f, "Saved journal window Y position. -1 centers the window on first use.");
-            _windowWidth = Config.Bind("UI", "WindowWidth", 720f, "Journal window width in pixels.");
-            _windowHeight = Config.Bind("UI", "WindowHeight", 560f, "Journal window height in pixels.");
+            _settings = new JournalSettings();
+            Config.Register(ref _settings);
+            InitializeConfigEntries();
 
-            string dataDirectory = Path.Combine(Paths.ConfigPath, "ErenshorJournal");
+            string dataDirectory = Path.Combine(Path.Combine(AppContext.BaseDirectory, "plugins", "config"), "ErenshorJournal");
             _store = new JournalStore(Path.Combine(dataDirectory, "journal.dat"));
             string warning;
             _document = _store.Load(out warning);
-            if (!string.IsNullOrEmpty(warning)) Logger.LogWarning("Erenshor Journal recovered from unreadable local data. " + warning);
+            if (!string.IsNullOrEmpty(warning)) Logging.LogWarning("Erenshor Journal recovered from unreadable local data. " + warning);
 
             _window = new JournalWindow();
             _launcher = new JournalLauncher();
             _windowRect = ResolveInitialRect();
             _launcherRect = ResolveInitialLauncherRect();
-            Logger.LogInfo("Erenshor Journal " + PluginVersion + " loaded. Use the draggable Journal UI button to open or close it. Journal does not register a global hotkey. Notes remain local and are never logged or networked.");
+            Logging.LogInfo("Erenshor Journal " + PluginVersion + " loaded. Use the draggable Journal UI button to open or close it. Journal does not register a global hotkey. Notes remain local and are never logged or networked.");
+        }
+
+        private void InitializeConfigEntries()
+        {
+            _launcherX = new JournalConfigEntry<float>(delegate { return _settings.LauncherX; }, delegate(float v) { _settings.LauncherX = v; });
+            _launcherY = new JournalConfigEntry<float>(delegate { return _settings.LauncherY; }, delegate(float v) { _settings.LauncherY = v; });
+            _windowX = new JournalConfigEntry<float>(delegate { return _settings.WindowX; }, delegate(float v) { _settings.WindowX = v; });
+            _windowY = new JournalConfigEntry<float>(delegate { return _settings.WindowY; }, delegate(float v) { _settings.WindowY = v; });
+            _windowWidth = new JournalConfigEntry<float>(delegate { return _settings.WindowWidth; }, delegate(float v) { _settings.WindowWidth = v; });
+            _windowHeight = new JournalConfigEntry<float>(delegate { return _settings.WindowHeight; }, delegate(float v) { _settings.WindowHeight = v; });
         }
 
         private void Update()
@@ -77,7 +84,7 @@ namespace ErenshorJournal
             }
             catch (Exception ex)
             {
-                Logger.LogError("Erenshor Journal update failed: " + ex);
+                Logging.LogError("Erenshor Journal update failed: " + ex);
             }
         }
 
@@ -101,7 +108,7 @@ namespace ErenshorJournal
             }
             catch (Exception ex)
             {
-                Logger.LogError("Erenshor Journal UI failed: " + ex);
+                Logging.LogError("Erenshor Journal UI failed: " + ex);
                 if (_open) CloseJournal();
             }
         }
@@ -177,7 +184,7 @@ namespace ErenshorJournal
             {
                 _dirty = true;
                 _saveAfter = Time.unscaledTime + 5f;
-                Logger.LogError("Erenshor Journal could not save local notes: " + ex.GetType().Name + ": " + ex.Message);
+                Logging.LogError("Erenshor Journal could not save local notes: " + ex.GetType().Name + ": " + ex.Message);
             }
         }
 
@@ -222,20 +229,11 @@ namespace ErenshorJournal
             if (_windowX == null || _windowY == null || _windowWidth == null || _windowHeight == null) return;
             Rect rect = ClampRect(_windowRect);
 
-            bool previous = Config.SaveOnConfigSet;
-            try
-            {
-                Config.SaveOnConfigSet = false;
-                _windowX.Value = rect.x;
-                _windowY.Value = rect.y;
-                _windowWidth.Value = rect.width;
-                _windowHeight.Value = rect.height;
-                Config.Save();
-            }
-            finally
-            {
-                Config.SaveOnConfigSet = previous;
-            }
+            _windowX.Value = rect.x;
+            _windowY.Value = rect.y;
+            _windowWidth.Value = rect.width;
+            _windowHeight.Value = rect.height;
+            Config.Save();
         }
 
         private void PersistLauncherRect()
@@ -243,19 +241,10 @@ namespace ErenshorJournal
             if (_launcherX == null || _launcherY == null) return;
             Rect rect = ClampLauncherRect(_launcherRect);
 
-            bool previous = Config.SaveOnConfigSet;
-            try
-            {
-                Config.SaveOnConfigSet = false;
-                _launcherX.Value = rect.x;
-                _launcherY.Value = rect.y;
-                Config.Save();
-                _launcherDirty = false;
-            }
-            finally
-            {
-                Config.SaveOnConfigSet = previous;
-            }
+            _launcherX.Value = rect.x;
+            _launcherY.Value = rect.y;
+            Config.Save();
+            _launcherDirty = false;
         }
 
         private static bool RectsNearlyEqual(Rect a, Rect b)
