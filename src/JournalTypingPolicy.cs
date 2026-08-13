@@ -32,15 +32,32 @@ namespace ErenshorJournal
         // currentlyForced: true if Journal itself is the one that last forced PlayerTyping true.
         // nativeOwnerActive: true if a verified native typing owner (see NativeTypingOwnership) is
         //   currently active - Journal must not clear PlayerTyping in that case.
-        internal static JournalTypingDecision Evaluate(bool wantsTyping, bool currentlyForced, bool nativeOwnerActive)
+        // currentPlayerTyping: the actual current value of GameData.PlayerTyping this frame. Not
+        //   inferred from currentlyForced - a later native writer (or another mod) can silently
+        //   overwrite the flag to false while Journal's text field is still focused, and
+        //   currentlyForced alone cannot detect that. Reading the real value every frame is what
+        //   lets Journal notice and reassert.
+        internal static JournalTypingDecision Evaluate(bool wantsTyping, bool currentlyForced, bool nativeOwnerActive, bool currentPlayerTyping)
         {
-            if (wantsTyping && !currentlyForced)
-                return new JournalTypingDecision(true, false, true);
+            if (wantsTyping)
+            {
+                // Journal is an active owner while focused, regardless of whether it was already
+                // forcing the flag. Writing true is always safe: every other writer of this flag
+                // also only ever wants it true while active, so there is no "true" value that
+                // conflicts with another owner - only reasserting after someone else cleared it
+                // is actually needed.
+                bool writeTrue = !currentPlayerTyping;
+                return new JournalTypingDecision(writeTrue, false, true);
+            }
 
-            if (!wantsTyping && currentlyForced)
+            if (currentlyForced)
+            {
+                // Relinquish Journal's own claim. Only clear the shared flag if no verified
+                // native owner still needs it true.
                 return new JournalTypingDecision(false, !nativeOwnerActive, false);
+            }
 
-            return new JournalTypingDecision(false, false, currentlyForced);
+            return new JournalTypingDecision(false, false, false);
         }
     }
 }

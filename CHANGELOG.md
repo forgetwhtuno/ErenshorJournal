@@ -3,10 +3,9 @@
 ## Unreleased (native Lunaris migration)
 
 - Converted the plugin host from BepInEx (`BaseUnityPlugin`/`[BepInPlugin]`/`[BepInProcess]`) to
-  native Lunaris (`LunarisPlugin`/`[LunarisPlugin]`/`[LunarisPermission(FileAccess)]`). No
-  Harmony, Reflection, or Network permission requested — this mod patches no game methods, uses
-  no reflection, and makes no network calls.
-  There is no chat-command interception in this mod (UI-button-only, no global hotkey), so
+  native Lunaris (`LunarisPlugin`/`[LunarisPlugin]`/`[LunarisPermission(FileAccess | Harmony)]`).
+  Still no Reflection or Network permission — this mod uses no reflection and makes no network
+  calls. There is no chat-command interception in this mod (UI-button-only, no global hotkey), so
   nothing here changes command syntax.
 - Config replaced `ConfigEntry<T>`/`Config.Bind` with native typed Lunaris config
   (`JournalSettings`); all 6 existing settings (section/key/default/description) preserved
@@ -16,6 +15,28 @@
   `plugins/config/ErenshorJournal/` (`Paths.ConfigPath` was BepInEx-specific).
 - `BUILD_AND_INSTALL.ps1`/`UNINSTALL.ps1` now target `<Erenshor>\plugins` instead of a BepInEx
   profile and no longer require `BepInEx.dll`.
+- **Added a narrow Harmony dependency, solely to stop Journal's IMGUI panel from leaking clicks
+  through to world target/camera controls.** Erenshor reads `PlayerControl.LeftClick` and
+  `csMouseOrbit.LateUpdate` from raw `Input.mousePosition`, bypassing whatever IMGUI already
+  consumed, so a click on the Journal window or launcher button could otherwise also drop the
+  player's current target or spin the camera. Two prefixes now guard against that:
+  `PlayerControl.LeftClick` and `csMouseOrbit.LateUpdate`. This is the only patch surface Journal
+  has; no other game method is touched.
+- Typing into the tab-name field or note text area now suppresses native movement/hotkeys by
+  setting the real native `GameData.PlayerTyping` flag while a Journal text control has focus —
+  the same flag Erenshor's own chat box and windows (Bank, Auction House, Guild Manager, Raid
+  save, Quest Log) use for the same purpose. Because `PlayerTyping` is a bare shared static bool
+  with no ownership encoded in it (confirmed by inspecting every native writer in the currently
+  installed `Assembly-CSharp.dll`), Journal never clears it unless it verifiably owns the current
+  assertion and no other native typing owner (native chat's input box, or a focused
+  `TMP_InputField`/`InputField` from Bank/Auction House/Guild Manager/Raid save/tab-rename) is
+  still active. See `src/JournalTypingPolicy.cs` (pure, Unity-independent decision logic) and
+  `src/NativeTypingOwnership.cs` (the actual in-game observation).
+- Deterministic test suite grew from 5 to 13 assertions (5 journal-core + 8 typing-policy) to
+  cover the `PlayerTyping` ownership handling, including the exact scenario that motivated it:
+  Journal losing text focus while a native owner is still active must never clear the flag, and
+  a later external writer clearing the flag while Journal is still focused must be corrected on
+  the next frame.
 
 ## 0.1.2 - UI consistency pass
 

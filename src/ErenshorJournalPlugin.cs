@@ -129,11 +129,14 @@ namespace ErenshorJournal
         // Only ever forces GameData.PlayerTyping on a transition Journal owns, and never clears
         // it while a verified native owner (native chat, Bank, Auction House, Guild Manager,
         // Raid save window, window-tab rename) is still active - see JournalTypingPolicy.cs and
-        // NativeTypingOwnership.cs for the evidence and the actual decision logic.
+        // NativeTypingOwnership.cs for the evidence and the actual decision logic. Reads the real
+        // current flag value every time: a later native writer can overwrite PlayerTyping to
+        // false while Journal's text field is still focused, and _forcedPlayerTyping alone cannot
+        // detect that - only the real value can.
         private void UpdatePlayerTyping(bool wantsTyping)
         {
             bool nativeOwnerActive = NativeTypingOwnership.IsAnyNativeOwnerActive();
-            JournalTypingDecision decision = JournalTypingPolicy.Evaluate(wantsTyping, _forcedPlayerTyping, nativeOwnerActive);
+            JournalTypingDecision decision = JournalTypingPolicy.Evaluate(wantsTyping, _forcedPlayerTyping, nativeOwnerActive, GameData.PlayerTyping);
             if (decision.WriteTrue) GameData.PlayerTyping = true;
             if (decision.WriteFalse) GameData.PlayerTyping = false;
             _forcedPlayerTyping = decision.NextForcedState;
