@@ -1,21 +1,21 @@
 param(
-    [string]$BepInExRoot = "",
+    [string]$GameDir = "",
     [switch]$RemoveData
 )
 
 $ErrorActionPreference = "Stop"
-if (-not $BepInExRoot) {
-    throw "Pass -BepInExRoot 'C:\path\to\your\Erenshor profile'. Journal data is preserved unless -RemoveData is also supplied."
+if (-not $GameDir) {
+    throw "Pass -GameDir 'C:\path\to\Erenshor'. Journal data is preserved unless -RemoveData is also supplied."
 }
 
-$pluginDir = Join-Path $BepInExRoot "BepInEx\plugins\ErenshorJournal"
-if (Test-Path $pluginDir) {
-    Remove-Item $pluginDir -Recurse -Force
-    Write-Host "Removed Erenshor Journal plugin files." -ForegroundColor Green
+$dll = Join-Path $GameDir "plugins\ErenshorJournal.dll"
+if (Test-Path $dll) {
+    Remove-Item $dll -Force
+    Write-Host "Removed Erenshor Journal plugin file." -ForegroundColor Green
 }
 
 if ($RemoveData) {
-    $dataDir = Join-Path $BepInExRoot "BepInEx\config\ErenshorJournal"
+    $dataDir = Join-Path $GameDir "plugins\config\ErenshorJournal"
     if (Test-Path $dataDir) {
         Remove-Item $dataDir -Recurse -Force
         Write-Host "Removed local journal data." -ForegroundColor Yellow

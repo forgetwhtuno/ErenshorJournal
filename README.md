@@ -2,7 +2,7 @@
 
 **Version:** 0.1.2 Preview  
 **Author:** forgetwhtuno  
-**Loader:** BepInEx 5  
+**Loader:** native Lunaris (BepInEx is no longer required)  
 **License:** Apache-2.0
 
 A deliberately small, local notebook for **Erenshor**.
@@ -34,7 +34,7 @@ It does **not**:
 - store SimPlayer personality or memory;
 - generate AI text;
 - send notes to a server or web service;
-- patch Erenshor gameplay methods;
+- patch any Erenshor gameplay/combat/quest/inventory method;
 - require Deep Sims, Crafting, PvP, COOP, Campmaster, Party Tools, or any other gameplay mod.
 
 The Journal is player-owned text. The Chronicle is only an optional integration sink for other mods that already know a verified event occurred.
@@ -46,31 +46,37 @@ Your notes remain on your machine.
 The journal file is stored under:
 
 ```text
-BepInEx/config/ErenshorJournal/journal.dat
+plugins/config/ErenshorJournal/journal.dat
 ```
 
-The mod performs **no networking** and never writes journal contents to the BepInEx log. The data format is local and base64-encodes fields only so multiline/unicode text can be saved safely; base64 is **not encryption**.
+The mod performs **no networking** and never writes journal contents to the log. The data format is local and base64-encodes fields only so multiline/unicode text can be saved safely; base64 is **not encryption**.
 
 A `.bak` copy is maintained during successful replacements. If the main file becomes unreadable, the mod preserves it as a timestamped `.corrupt-*` copy and opens a fresh default journal rather than destroying it.
 
 ## Installation / build
 
-This source package intentionally does not redistribute Erenshor or BepInEx assemblies.
+This version requires **native Lunaris** — BepInEx is no longer required. This source package intentionally does not redistribute Erenshor or Lunaris assemblies.
 
-1. Install BepInEx for Erenshor and launch the game modded once.
+1. Install Lunaris for Erenshor and launch the game modded once.
 2. Run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\BUILD_AND_INSTALL.ps1
 ```
 
-The script locates your current Erenshor installation and BepInEx profile, builds against the installed Unity/BepInEx assemblies, then installs:
+The script locates your current Erenshor installation and the Lunaris developer reference, builds against the installed Unity/Lunaris assemblies, then installs:
 
 ```text
-BepInEx/plugins/ErenshorJournal/ErenshorJournal.dll
+plugins/ErenshorJournal.dll
 ```
 
-Unlike many gameplay mods, Erenshor Journal does **not** reference `Assembly-CSharp.dll` and uses no Harmony patches. That is intentional: a notebook should have a very small patch-maintenance surface.
+Lunaris manages enable/disable and config. A legacy BepInEx release remains available in this repository's Git history.
+
+**Status:** this native build compiles cleanly against the installed Lunaris/Assembly-CSharp and passes its deterministic test suite. It has not yet been live-tested in-game under Lunaris (enable/disable/reload behavior). Do not assume hot-reload safety until that pass is done.
+
+Erenshor Journal carries a narrow Harmony dependency (`[LunarisPermission(FileAccess | Harmony)]`) solely to prevent its own IMGUI panel from leaking clicks through to world target/camera controls — Erenshor reads `PlayerControl.LeftClick` and `csMouseOrbit.LateUpdate` from raw mouse position, bypassing whatever IMGUI already consumed, so without this a click on the Journal window could also drop your target or spin the camera. Those two methods are the only patch surface Journal has; no quest, combat, or inventory method is touched. Journal still uses no reflection and makes no network calls.
+
+Typing into the Journal's tab-name field or note text area also sets the real native `GameData.PlayerTyping` flag while a Journal text control has focus, so WASD/hotkeys don't fire while you're writing a note — the same mechanism Erenshor's own chat box and windows (Bank, Auction House, Guild Manager, Raid save, Quest Log) already use. Journal never clears that flag unless it verifiably owns the current assertion and no other native typing owner is still active, so it can't clobber native chat or another window's typing state.
 
 ### Opening the Journal
 
@@ -119,12 +125,12 @@ That makes integrations additive instead of required dependencies.
 
 ## Uninstall
 
-Remove the `ErenshorJournal` plugin folder. The provided uninstall script preserves your journal data by default.
+Remove the `ErenshorJournal.dll` plugin file. The provided uninstall script preserves your journal data by default.
 
 To intentionally erase the saved notes too:
 
 ```powershell
-.\UNINSTALL.ps1 -BepInExRoot "C:\path\to\profile" -RemoveData
+.\UNINSTALL.ps1 -GameDir "C:\path\to\Erenshor" -RemoveData
 ```
 
 ## Development note
