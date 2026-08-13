@@ -126,20 +126,17 @@ namespace ErenshorJournal
             }
         }
 
-        // Only ever forces GameData.PlayerTyping on a transition we own, so we never clobber the
-        // native chat box (or another mod) that might independently be setting the same flag.
+        // Only ever forces GameData.PlayerTyping on a transition Journal owns, and never clears
+        // it while a verified native owner (native chat, Bank, Auction House, Guild Manager,
+        // Raid save window, window-tab rename) is still active - see JournalTypingPolicy.cs and
+        // NativeTypingOwnership.cs for the evidence and the actual decision logic.
         private void UpdatePlayerTyping(bool wantsTyping)
         {
-            if (wantsTyping && !_forcedPlayerTyping)
-            {
-                GameData.PlayerTyping = true;
-                _forcedPlayerTyping = true;
-            }
-            else if (!wantsTyping && _forcedPlayerTyping)
-            {
-                GameData.PlayerTyping = false;
-                _forcedPlayerTyping = false;
-            }
+            bool nativeOwnerActive = NativeTypingOwnership.IsAnyNativeOwnerActive();
+            JournalTypingDecision decision = JournalTypingPolicy.Evaluate(wantsTyping, _forcedPlayerTyping, nativeOwnerActive);
+            if (decision.WriteTrue) GameData.PlayerTyping = true;
+            if (decision.WriteFalse) GameData.PlayerTyping = false;
+            _forcedPlayerTyping = decision.NextForcedState;
         }
 
         // True while the pointer (already converted to GUI screen-space by the caller) is over
@@ -160,6 +157,7 @@ namespace ErenshorJournal
             try { PersistWindowRect(); } catch { }
             try { PersistLauncherRect(); } catch { }
             try { UpdatePlayerTyping(false); } catch { }
+            try { NativeTypingOwnership.Reset(); } catch { }
             try { if (_window != null) _window.Dispose(); } catch { }
             try { if (_launcher != null) _launcher.Dispose(); } catch { }
             try { if (_open) RestoreCursor(); } catch { }

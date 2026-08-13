@@ -20,5 +20,7 @@
     <Reference Include="UnityEngine.IMGUIModule"><HintPath>refs\UnityEngine.IMGUIModule.dll</HintPath></Reference>
     <Reference Include="UnityEngine.TextRenderingModule"><HintPath>refs\UnityEngine.TextRenderingModule.dll</HintPath></Reference>
     <Reference Include="UnityEngine.InputLegacyModule"><HintPath>refs\UnityEngine.InputLegacyModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>refs\UnityEngine.UI.dll</HintPath></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>refs\Unity.TextMeshPro.dll</HintPath></Reference>
   </ItemGroup>
 </Project>

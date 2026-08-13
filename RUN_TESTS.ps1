@@ -20,3 +20,13 @@ $out = Join-Path $env:TEMP "ErenshorJournalCoreTests.exe"
 if ($LASTEXITCODE -ne 0) { throw "Journal core tests did not compile." }
 & $out
 if ($LASTEXITCODE -ne 0) { throw "Journal core tests failed." }
+
+# Pure decision logic behind the GameData.PlayerTyping ownership handling - no UnityEngine or
+# game assembly dependency, so this stays testable outside the game. See src/JournalTypingPolicy.cs.
+$typingOut = Join-Path $env:TEMP "ErenshorJournalTypingPolicyTests.exe"
+& $csc /nologo /target:exe /out:$typingOut `
+    (Join-Path $ScriptRoot "src\JournalTypingPolicy.cs") `
+    (Join-Path $ScriptRoot "tests\JournalTypingPolicyTests.cs")
+if ($LASTEXITCODE -ne 0) { throw "Journal typing policy tests did not compile." }
+& $typingOut
+if ($LASTEXITCODE -ne 0) { throw "Journal typing policy tests failed." }
