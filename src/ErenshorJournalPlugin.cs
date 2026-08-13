@@ -27,6 +27,7 @@ namespace ErenshorJournal
         private JournalConfigEntry<float> _windowY;
         private JournalConfigEntry<float> _windowWidth;
         private JournalConfigEntry<float> _windowHeight;
+        private JournalConfigEntry<bool> _diagnosticsLogging;
 
         private JournalStore _store;
         private JournalDocument _document;
@@ -42,6 +43,20 @@ namespace ErenshorJournal
         private bool _cursorVisibleBeforeOpen;
         private CursorLockMode _cursorLockBeforeOpen;
 
+        // True only once a real, local, playable character exists (see
+        // JournalCharacterIdentity.IsLocalCharacterReady). Recomputed every frame; never cached
+        // across a scene load. Nothing character-scoped (the launcher, the window, or any file
+        // load) may happen while this is false.
+        private bool _ready;
+        // The currently loaded character's stable identity key, or null before any character has
+        // ever loaded this session. See JournalCharacterIdentity.ResolveCharacterKey.
+        private string _characterKey;
+
+        private bool Diagnostics
+        {
+            get { return _diagnosticsLogging != null && _diagnosticsLogging.Value; }
+        }
+
         private void Awake()
         {
             Instance = this;
@@ -49,12 +64,10 @@ namespace ErenshorJournal
             Config.Register(ref _settings);
             InitializeConfigEntries();
 
-            string dataDirectory = Path.Combine(Path.Combine(AppContext.BaseDirectory, "plugins", "config"), "ErenshorJournal");
-            _store = new JournalStore(Path.Combine(dataDirectory, "journal.dat"));
-            string warning;
-            _document = _store.Load(out warning);
-            if (!string.IsNullOrEmpty(warning)) Logging.LogWarning("Erenshor Journal recovered from unreadable local data. " + warning);
-
+            // Deliberately does NOT load any journal data here. Journal data is per-character (see
+            // EnsureCharacterContext) and must not be touched until a real local character exists;
+            // Awake runs at plugin load, well before that is true (e.g. still at the title screen
+            // or character-select).
             _window = new JournalWindow();
             _launcher = new JournalLauncher();
             _windowRect = ResolveInitialRect();
@@ -63,7 +76,7 @@ namespace ErenshorJournal
             _harmony = new Harmony(PluginGuid);
             _harmony.PatchAll();
 
-            Logging.LogInfo("Erenshor Journal " + PluginVersion + " loaded. Use the draggable Journal UI button to open or close it. Journal does not register a global hotkey. Notes remain local and are never logged or networked.");
+            Logging.LogInfo("Erenshor Journal " + PluginVersion + " loaded. The draggable Journal UI button appears once a character is loaded into the world. Journal does not register a global hotkey. Notes remain local, per character, and are never logged or networked.");
         }
 
         private void InitializeConfigEntries()
@@ -74,20 +87,90 @@ namespace ErenshorJournal
             _windowY = new JournalConfigEntry<float>(delegate { return _settings.WindowY; }, delegate(float v) { _settings.WindowY = v; });
             _windowWidth = new JournalConfigEntry<float>(delegate { return _settings.WindowWidth; }, delegate(float v) { _settings.WindowWidth = v; });
             _windowHeight = new JournalConfigEntry<float>(delegate { return _settings.WindowHeight; }, delegate(float v) { _settings.WindowHeight = v; });
+            _diagnosticsLogging = new JournalConfigEntry<bool>(delegate { return _settings.DiagnosticsLogging; }, delegate(bool v) { _settings.DiagnosticsLogging = v; });
+        }
+
+        // Recomputes the ready signal fresh every call (cheap null/bool checks - see
+        // JournalCharacterIdentity). On a READY -> NOT READY transition: force-closes any open
+        // panel (saves + restores cursor via CloseJournal), and drops the character context so nothing
+        // character-scoped lingers. Logged unconditionally (not gated behind Diagnostics) since this
+        // only fires on login/logout/char-select, not every frame.
+        private bool RefreshReadyState()
+        {
+            bool ready = JournalCharacterIdentity.IsLocalCharacterReady();
+            if (ready == _ready) return ready;
+
+            _ready = ready;
+            Logging.LogInfo("Erenshor Journal ready-signal is now " + (ready ? "READY" : "NOT READY") + ".");
+            if (!ready)
+            {
+                if (_open) CloseJournal();
+                _characterKey = null;
+                _document = null;
+                _store = null;
+            }
+            return ready;
+        }
+
+        // Loads (or migrates-then-loads) the resolved character's notebook when the resolved
+        // character key changes while READY. Cheap to call every frame while ready: it is a single
+        // string comparison unless the key actually changed. Sequence on an actual change: (1) save
+        // the outgoing character's document if dirty, (2) close the panel if open, (3) release the
+        // old store/document, (4) resolve the new key, (5) migrate-then-load, (6) rebuild transient
+        // UI state - never letting one character's notes leak into another's window, even for one frame.
+        private void EnsureCharacterContext()
+        {
+            string key = JournalCharacterIdentity.ResolveCharacterKey();
+            if (string.Equals(key, _characterKey, StringComparison.Ordinal)) return;
+
+            if (Diagnostics) Logging.LogInfo("[Journal][diag] character switch: '" + (_characterKey ?? "<none>") + "' -> '" + key + "'");
+
+            if (_dirty) SaveNow();
+            if (_open) CloseJournal();
+            _document = null;
+            _store = null;
+
+            _characterKey = key;
+            string baseDirectory = AppContext.BaseDirectory;
+            string legacyPath = JournalPaths.LegacyJournalPath(baseDirectory);
+            string claimMarkerPath = JournalPaths.LegacyClaimMarkerPath(baseDirectory);
+            string characterPath = JournalPaths.CharacterJournalPath(baseDirectory, key);
+
+            try { JournalLegacyMigration.ClaimIfEligible(legacyPath, characterPath, claimMarkerPath); }
+            catch (Exception ex) { Logging.LogError("Erenshor Journal legacy data migration failed for character '" + key + "': " + ex.GetType().Name + ": " + ex.Message); }
+
+            _store = new JournalStore(characterPath);
+            string warning;
+            _document = _store.Load(out warning);
+            if (!string.IsNullOrEmpty(warning)) Logging.LogWarning("Erenshor Journal recovered from unreadable local data for character '" + key + "'. " + warning);
+
+            // Rebuild transient UI state (scroll positions, delete-arm timers, cached styles/textures)
+            // so nothing from the previous character's session lingers.
+            if (_window != null) _window.Dispose();
+            _window = new JournalWindow();
         }
 
         private void Update()
         {
             try
             {
-                PendingChronicleEntry pending;
-                bool appended = false;
-                while (JournalApi.TryDequeue(out pending))
+                bool ready = RefreshReadyState();
+                if (ready)
                 {
-                    JournalCore.AppendChronicle(_document, pending.Source, pending.Category, pending.Text, pending.TimestampUtc);
-                    appended = true;
+                    EnsureCharacterContext();
+
+                    if (_document != null)
+                    {
+                        PendingChronicleEntry pending;
+                        bool appended = false;
+                        while (JournalApi.TryDequeue(out pending))
+                        {
+                            JournalCore.AppendChronicle(_document, pending.Source, pending.Category, pending.Text, pending.TimestampUtc);
+                            appended = true;
+                        }
+                        if (appended) MarkDirty();
+                    }
                 }
-                if (appended) MarkDirty();
 
                 if (_dirty && Time.unscaledTime >= _saveAfter) SaveNow();
                 if (_launcherDirty && Time.unscaledTime >= _launcherSaveAfter) PersistLauncherRect();
@@ -102,21 +185,37 @@ namespace ErenshorJournal
         {
             try
             {
+                // Recomputed fresh here too (not just read from the field Update() last wrote) so
+                // the launcher/window can never be drawn for a stray frame if OnGUI happens to run
+                // ahead of Update() in Unity's event ordering. NOT READY -> nothing is drawn at all.
+                bool ready = RefreshReadyState();
+                if (!ready) return;
+
+                EnsureCharacterContext();
+                if (_document == null || _window == null || _launcher == null) return;
+
                 bool textFocused = false;
-                if (_open && _window != null && _document != null)
+                if (_open)
                 {
+                    if (Diagnostics) Logging.LogInfo("[Journal][diag] window.Draw entering; rect=" + _windowRect);
                     _windowRect = ClampRect(_window.Draw(_windowRect, _document, MarkDirty));
                     textFocused = _window.IsTextInputFocused;
-                    if (_window.RequestClose) CloseJournal();
+                    if (_window.RequestClose)
+                    {
+                        if (Diagnostics) Logging.LogInfo("[Journal][diag] window requested close.");
+                        CloseJournal();
+                    }
                 }
                 UpdatePlayerTyping(textFocused);
 
-                if (_launcher != null)
+                Rect previousLauncherRect = _launcherRect;
+                _launcherRect = ClampLauncherRect(_launcher.Draw(_launcherRect, _open));
+                if (!RectsNearlyEqual(previousLauncherRect, _launcherRect)) MarkLauncherDirty();
+                if (_launcher.RequestToggle)
                 {
-                    Rect previous = _launcherRect;
-                    _launcherRect = ClampLauncherRect(_launcher.Draw(_launcherRect, _open));
-                    if (!RectsNearlyEqual(previous, _launcherRect)) MarkLauncherDirty();
-                    if (_launcher.RequestToggle) ToggleJournal();
+                    if (Diagnostics) Logging.LogInfo("[Journal][diag] launcher click seen; open-before=" + _open);
+                    ToggleJournal();
+                    if (Diagnostics) Logging.LogInfo("[Journal][diag] ToggleJournal handled; open-after=" + _open);
                 }
             }
             catch (Exception ex)
@@ -148,6 +247,7 @@ namespace ErenshorJournal
         // the camera.
         internal bool PointerIsOverUi(Vector2 guiPoint)
         {
+            if (!_ready) return false;
             if (_open && _windowRect.Contains(guiPoint)) return true;
             if (_launcherRect.Contains(guiPoint)) return true;
             return false;

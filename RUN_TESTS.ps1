@@ -30,3 +30,24 @@ $typingOut = Join-Path $env:TEMP "ErenshorJournalTypingPolicyTests.exe"
 if ($LASTEXITCODE -ne 0) { throw "Journal typing policy tests did not compile." }
 & $typingOut
 if ($LASTEXITCODE -ne 0) { throw "Journal typing policy tests failed." }
+
+# Pure per-character key composition - no UnityEngine or game assembly dependency. See
+# src/JournalCharacterKey.cs (live GameData resolution lives in JournalCharacterIdentity.cs, not
+# exercised here).
+$characterKeyOut = Join-Path $env:TEMP "ErenshorJournalCharacterKeyTests.exe"
+& $csc /nologo /target:exe /out:$characterKeyOut `
+    (Join-Path $ScriptRoot "src\JournalCharacterKey.cs") `
+    (Join-Path $ScriptRoot "tests\JournalCharacterKeyTests.cs")
+if ($LASTEXITCODE -ne 0) { throw "Journal character key tests did not compile." }
+& $characterKeyOut
+if ($LASTEXITCODE -ne 0) { throw "Journal character key tests failed." }
+
+# Legacy-data "first character claims it once" migration policy - file-based, no UnityEngine or
+# game assembly dependency. See src/JournalLegacyMigration.cs.
+$legacyOut = Join-Path $env:TEMP "ErenshorJournalLegacyMigrationTests.exe"
+& $csc /nologo /target:exe /out:$legacyOut `
+    (Join-Path $ScriptRoot "src\JournalLegacyMigration.cs") `
+    (Join-Path $ScriptRoot "tests\JournalLegacyMigrationTests.cs")
+if ($LASTEXITCODE -ne 0) { throw "Journal legacy migration tests did not compile." }
+& $legacyOut
+if ($LASTEXITCODE -ne 0) { throw "Journal legacy migration tests failed." }

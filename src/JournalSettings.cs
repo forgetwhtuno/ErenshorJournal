@@ -44,5 +44,8 @@ namespace ErenshorJournal
 
         [Config("WindowHeight", "UI", "Journal window height in pixels.")]
         public float WindowHeight = 560f;
+
+        [Config("DiagnosticsLogging", "Debug", "When enabled, logs extra low-noise diagnostic lines for the launcher click / open-close / character-switch chain. Off by default.")]
+        public bool DiagnosticsLogging = false;
     }
 }
