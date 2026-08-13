@@ -12,8 +12,8 @@ The pure tests cover default state, tab lifecycle, Unicode/multiline persistence
 
 ## First-run smoke test
 
-1. Launch Erenshor with BepInEx and the plugin installed.
-2. Confirm the BepInEx log reports Erenshor Journal 0.1.2 loaded.
+1. Launch Erenshor with Lunaris and the plugin installed.
+2. Confirm the Lunaris log reports Erenshor Journal loaded once.
 3. Confirm the small `Journal` launcher button appears.
 4. Click `Journal` and confirm `Journal`, `Quest Notes`, `Crafting`, and `Chronicle` are visible.
 5. Type several lines, including punctuation and pasted Unicode text.
@@ -70,7 +70,7 @@ Verify:
 After backing up real notes first:
 
 1. Close Erenshor.
-2. Corrupt `BepInEx/config/ErenshorJournal/journal.dat` with arbitrary text.
+2. Corrupt `plugins/config/ErenshorJournal/journal.dat` with arbitrary text.
 3. Relaunch.
 4. Verify a default journal opens.
 5. Verify a `.corrupt-YYYYMMDD-HHMMSS` copy was preserved.
@@ -80,7 +80,7 @@ After backing up real notes first:
 
 The plugin intentionally uses:
 
-- BepInEx plugin lifecycle;
+- Lunaris plugin lifecycle, including unload/reload;
 - Unity `Input`, IMGUI, cursor, screen, and time APIs;
 - standard .NET file APIs.
 

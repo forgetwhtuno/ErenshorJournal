@@ -12,12 +12,7 @@ namespace ErenshorJournal
         // scene load (the player object is destroyed/recreated on zone and character transitions).
         internal static bool IsLocalCharacterReady()
         {
-            try
-            {
-                return !GameData.InCharSelect && GameData.PlayerControl != null && GameData.PlayerControl.Myself != null &&
-                    GameData.PlayerControl.Myself.MyStats != null && GameData.PlayerControl.Myself.gameObject.activeInHierarchy;
-            }
-            catch { return false; }
+            return SuiteUiPolicy.IsGameplayReady();
         }
 
         internal static string ResolveCharacterKey()

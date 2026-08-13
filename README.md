@@ -16,8 +16,8 @@ Use the small draggable **Journal** button in the UI to open a journal you can u
 - default `Journal`, `Quest Notes`, and `Crafting` tabs;
 - one-click local timestamp insertion;
 - copy current page to the clipboard;
-- small draggable `JOURNAL` UI launcher with saved position and active/open styling;
-- draggable, resizable Erenshor-like journal window with saved position and size;
+- small retained-uGUI `JOURNAL` launcher with Suite-style drag, normalized saved position, fallback visibility, and active/open styling;
+- retained-uGUI journal window with a visible close/reset header, Suite-style drag, retained resize grip, scrolling, saved normalized position, and persisted size;
 - automatic local saving;
 - backup/recovery if the journal data file becomes unreadable;
 - optional **Chronicle** view for verified events supplied by compatible mods.
@@ -72,19 +72,19 @@ plugins/ErenshorJournal.dll
 
 Lunaris manages enable/disable and config. A legacy BepInEx release remains available in this repository's Git history.
 
-**Status:** this native build compiles cleanly against the installed Lunaris/Assembly-CSharp and passes its deterministic test suite. It has not yet been live-tested in-game under Lunaris (enable/disable/reload behavior). Do not assume hot-reload safety until that pass is done.
+**Status:** the pre-uGUI native baseline compiled and passed its deterministic tests. The retained-uGUI candidate in this handoff is source-verified but could not be recompiled here because the handoff omitted native Erenshor/Lunaris reference DLLs. Live enable/disable/reload verification is still required.
 
-Erenshor Journal carries a narrow Harmony dependency (`[LunarisPermission(FileAccess | Harmony)]`) solely to prevent its own IMGUI panel from leaking clicks through to world target/camera controls — Erenshor reads `PlayerControl.LeftClick` and `csMouseOrbit.LateUpdate` from raw mouse position, bypassing whatever IMGUI already consumed, so without this a click on the Journal window could also drop your target or spin the camera. Those two methods are the only patch surface Journal has; no quest, combat, or inventory method is touched. Journal still uses no reflection and makes no network calls.
+Erenshor Journal now uses retained Unity uGUI for its player-facing panel and launcher, so it no longer needs Harmony patches merely to protect UI clicks. It requests only Lunaris file access for its local notebook storage and makes no network calls.
 
 Typing into the Journal's tab-name field or note text area also sets the real native `GameData.PlayerTyping` flag while a Journal text control has focus, so WASD/hotkeys don't fire while you're writing a note — the same mechanism Erenshor's own chat box and windows (Bank, Auction House, Guild Manager, Raid save, Quest Log) already use. Journal never clears that flag unless it verifiably owns the current assertion and no other native typing owner is still active, so it can't clobber native chat or another window's typing state.
 
 ### Opening the Journal
 
-The normal control is the small draggable **JOURNAL** UI button. Drag it by the `||` grip on its left edge; its position is saved. Clicking the button toggles the Journal open or closed. The button changes visual state while the Journal is open.
+The normal control is the small draggable **JOURNAL** UI button. Drag it by the `◇` grip on its left edge; its position is saved. Clicking the button toggles the Journal open or closed. The button changes visual state while the Journal is open.
 
 Erenshor Journal **does not register a global hotkey**. This is intentional so it cannot compete with Erenshor or other mods for F-keys or other gameplay bindings. Close the window with its `X` button or the same `JOURNAL` toggle.
 
-The main window can be moved by its title bar and resized from the `//` grip in the lower-right corner. Its position and size are saved and clamped back on-screen after resolution changes.
+The main retained-uGUI window can be moved by its title bar. Its normalized position is saved at drag end, invalid/legacy/off-screen values recover safely, and the configured window size remains available through Lunaris config.
 
 ## Chronicle integration API
 
@@ -138,3 +138,18 @@ To intentionally erase the saved notes too:
 This project was developed with substantial AI-assisted coding and review. Gameplay authority and integration boundaries are intentionally kept deterministic and local.
 
 Erenshor Journal is an unofficial community mod and is not affiliated with or endorsed by Burgee Media.
+
+
+## Optional Suite Hub integration
+
+Erenshor Suite Hub is **optional**. When it is installed, this mod can expose its normal player-facing controls there through the versioned public `JournalControlApi` surface. The mod remains independently usable without Suite Hub and does not compile against Hub types or assume Hub load order.
+
+Journal remains the dedicated notebook/editor. A compact standalone launcher is a fallback and is hidden by default while Suite Hub is loaded.
+
+Hub can show the current character and notebook/Chronicle summary and open or close Journal; it does not edit notes.
+
+The shared control/API and fully-in-world UI policy in this handoff are source-validated but **not yet live-tested under Lunaris hot reload**.
+
+### Content/UI migration candidate
+
+The current source migrates Journal player UI from legacy immediate-mode rendering to retained Unity uGUI. The Suite Hub bridge exposes **Show Journal launcher** and Open/Close/Reset actions without exposing note contents. The standalone launcher is forced visible whenever Hub or the Journal bridge is unusable. This source migration still requires a native compile and live Lunaris UI/reload pass before release.

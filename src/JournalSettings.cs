@@ -27,16 +27,19 @@ namespace ErenshorJournal
     {
         public JournalSettings() { }
 
-        [Config("LauncherX", "UI", "Saved launcher X position. -1 places it near the right side of the screen on first use.")]
+        [Config("LauncherX", "UI", "Saved launcher horizontal position, normalized 0..1. Invalid/legacy pixel values recover to the safe default.")]
         public float LauncherX = -1f;
 
-        [Config("LauncherY", "UI", "Saved launcher Y position. -1 vertically centers it on first use.")]
+        [Config("LauncherY", "UI", "Saved launcher vertical position, normalized 0..1. Invalid/legacy pixel values recover to the safe default.")]
         public float LauncherY = -1f;
 
-        [Config("WindowX", "UI", "Saved journal window X position. -1 centers the window on first use.")]
+        [Config("ShowStandaloneLauncherWithHub", "UI", "Show Journal launcher while a usable Suite Hub bridge is present. If Hub or this module bridge is unavailable, the standalone launcher is forced visible for recovery.")]
+        public bool ShowStandaloneLauncherWithHub = false;
+
+        [Config("WindowX", "UI", "Saved Journal window horizontal position, normalized 0..1. Invalid/legacy pixel values recover to the safe default.")]
         public float WindowX = -1f;
 
-        [Config("WindowY", "UI", "Saved journal window Y position. -1 centers the window on first use.")]
+        [Config("WindowY", "UI", "Saved Journal window vertical position, normalized 0..1. Invalid/legacy pixel values recover to the safe default.")]
         public float WindowY = -1f;
 
         [Config("WindowWidth", "UI", "Journal window width in pixels.")]

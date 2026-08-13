@@ -68,3 +68,11 @@ Initial preview release.
 - Read-only-style Chronicle view for verified entries appended by compatible mods.
 - Tiny reflection-friendly `JournalApi.AddChronicleEntry(source, category, text)` integration surface.
 - No Harmony patches, no `Assembly-CSharp.dll` dependency, no networking, no AI, and no automatic quest inference.
+
+
+## Unreleased - Suite UI/API coherence handoff
+
+- Added optional, versioned `JournalControlApi` discovery/control surface for Suite Hub without a hard Hub dependency.
+- Kept standalone commands and core gameplay authority intact.
+- Documented the retained panel/launcher policy and Lunaris live-test requirement.
+- Strengthened fully-in-world gating, made the launcher Hub-aware fallback-only, deferred launcher/close state transitions out of `OnGUI`, and added panel Reset Position / whole-drag input capture while preserving native typing ownership.
