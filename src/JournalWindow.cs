@@ -1,279 +1,356 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
+using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace ErenshorJournal
 {
     internal sealed class JournalWindow
     {
-        private const int WindowId = 0x45524A4E;
-        private const float HeaderHeight = 31f;
         private const int ChronicleVisibleLimit = 200;
+
+        private GameObject _root;
+        private RectTransform _panel;
+        private RectTransform _tabsContent;
+        private Button _chronicleTabButton;
+        private readonly List<Button> _tabButtons = new List<Button>();
+        private RectTransform _pageRoot;
+        private RectTransform _chronicleRoot;
+        private RectTransform _chronicleContent;
+        private TextMeshProUGUI _pageFooter;
+        private TextMeshProUGUI _chronicleFooter;
+        private TMP_InputField _nameInput;
+        private TMP_InputField _noteInput;
+        private Button _deleteButton;
+        private TextMeshProUGUI _deleteLabel;
+        private Button _clearButton;
+        private TextMeshProUGUI _clearLabel;
+        private RetainedPosition _position;
 
         private JournalDocument _document;
         private Action _markDirty;
         private bool _showChronicle;
-        private bool _requestClose;
-        private Vector2 _tabScroll;
-        private Vector2 _chronicleScroll;
+        private bool _suppressInput;
         private float _deleteArmedUntil;
-        private float _clearChronicleArmedUntil;
-        private Rect _currentWindowRect;
-        private bool _resizing;
-        private Vector2 _resizeDelta;
-        private bool _textInputFocused;
+        private float _clearArmedUntil;
+        private string _tabSignature = string.Empty;
+        private int _chronicleCount = -1;
+        private string _boundTabId = string.Empty;
 
-        private const string TabNameControl = "ErenshorJournal.TabName";
-        private const string NoteTextControl = "ErenshorJournal.NoteText";
-
-        // True while the tab-name field or the note text area actually has keyboard focus, not
-        // merely while the window is open. Used to suppress native movement/hotkey input only
-        // for as long as the player is actually typing into the journal.
         internal bool IsTextInputFocused
         {
-            get { return _textInputFocused; }
+            get { return (_nameInput != null && _nameInput.isFocused) || (_noteInput != null && _noteInput.isFocused); }
         }
 
-        private Texture2D _panelTexture;
-        private Texture2D _buttonTexture;
-        private Texture2D _buttonHoverTexture;
-        private Texture2D _selectedTexture;
-        private Texture2D _dangerTexture;
-        private Texture2D _dangerHoverTexture;
-        private Texture2D _textTexture;
-        private GUIStyle _windowStyle;
-        private GUIStyle _titleStyle;
-        private GUIStyle _sectionStyle;
-        private GUIStyle _textAreaStyle;
-        private GUIStyle _textFieldStyle;
-        private GUIStyle _tabStyle;
-        private GUIStyle _selectedTabStyle;
-        private GUIStyle _footerStyle;
-        private GUIStyle _chronicleStyle;
-        private GUIStyle _buttonStyle;
-        private GUIStyle _dangerButtonStyle;
-        private GUIStyle _closeButtonStyle;
-        private GUIStyle _resizeGripStyle;
-
-        internal bool RequestClose
+        internal void Initialize(float storedX, float storedY, float width, float height,
+            Action<float, float> persist, Action<float, float> persistSize, Action close, Action reset)
         {
-            get { return _requestClose; }
+            Dispose();
+            width = Mathf.Clamp(width, 520f, Mathf.Max(520f, Screen.width - 20f));
+            height = Mathf.Clamp(height, 360f, Mathf.Max(360f, Screen.height - 20f));
+
+            _root = RetainedUiKit.CreateCanvas("ErenshorJournalCanvas", 520);
+            RectTransform canvas = _root.GetComponent<RectTransform>();
+            _panel = RetainedUiKit.CreateRect("JournalPanel", canvas);
+            RetainedUiKit.AnchorBottomLeft(_panel, 0f, 0f, width, height);
+            RetainedUiKit.AddImage(_panel, RetainedUiKit.Panel);
+            CanvasGroup group = _panel.gameObject.AddComponent<CanvasGroup>();
+            group.interactable = true;
+            group.blocksRaycasts = true;
+
+            BuildHeader(close, reset);
+            BuildTabs();
+            BuildPage();
+            BuildChronicle();
+
+            _position = new RetainedPosition(storedX, storedY, 0.5f, 0.5f, persist);
+            _position.Resolve(_panel);
+            RetainedUiKit.AddResizeGrip("ResizeGrip", _panel, _panel, 16f, new Vector2(520f, 360f), persistSize);
+            _root.SetActive(false);
         }
 
-        internal Rect Draw(Rect rect, JournalDocument document, Action markDirty)
+        private void BuildHeader(Action close, Action reset)
         {
-            EnsureStyles();
+            RectTransform header = RetainedUiKit.CreateRect("Header", _panel);
+            RetainedUiKit.AnchorTopStretch(header, 0f, 0f, 0f, 32f);
+            RetainedUiKit.AddImage(header, RetainedUiKit.Header);
+
+            TextMeshProUGUI title = RetainedUiKit.AddLabel("Title", header, "ERENSHOR JOURNAL", 15f, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
+            RetainedUiKit.Stretch(title.rectTransform, 10f, 0f, 72f, 0f);
+
+            Button resetButton = RetainedUiKit.AddButton("Reset", header, "R", reset, 28f, 24f, false);
+            RectTransform rr = resetButton.GetComponent<RectTransform>();
+            RemoveLayout(rr);
+            rr.anchorMin = rr.anchorMax = new Vector2(1f, 0.5f);
+            rr.pivot = new Vector2(1f, 0.5f);
+            rr.anchoredPosition = new Vector2(-38f, 0f);
+            rr.sizeDelta = new Vector2(28f, 24f);
+
+            Button closeButton = RetainedUiKit.AddButton("Close", header, "X", close, 28f, 24f, false);
+            RectTransform cr = closeButton.GetComponent<RectTransform>();
+            RemoveLayout(cr);
+            cr.anchorMin = cr.anchorMax = new Vector2(1f, 0.5f);
+            cr.pivot = new Vector2(1f, 0.5f);
+            cr.anchoredPosition = new Vector2(-6f, 0f);
+            cr.sizeDelta = new Vector2(28f, 24f);
+
+            RetainedUiKit.AddDragSurface("DragSurface", header, _panel, 72f,
+                delegate { if (_position != null) _position.DragCompleted(_panel); });
+        }
+
+        private void BuildTabs()
+        {
+            RectTransform tabs = RetainedUiKit.CreateRect("Tabs", _panel);
+            tabs.anchorMin = new Vector2(0f, 1f);
+            tabs.anchorMax = new Vector2(1f, 1f);
+            tabs.pivot = new Vector2(0.5f, 1f);
+            tabs.offsetMin = new Vector2(8f, -70f);
+            tabs.offsetMax = new Vector2(-8f, -34f);
+
+            RectTransform viewport;
+            RectTransform content;
+            ScrollRect scroll = RetainedUiKit.AddScrollRect("TabScroll", tabs, true, false, out viewport, out content);
+            RetainedUiKit.Stretch(scroll.GetComponent<RectTransform>(), 0f, 0f, 0f, 0f);
+            HorizontalLayoutGroup layout = content.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.spacing = 4f;
+            layout.childAlignment = TextAnchor.MiddleLeft;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = true;
+            ContentSizeFitter fit = content.gameObject.AddComponent<ContentSizeFitter>();
+            fit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            _tabsContent = content;
+        }
+
+        private void BuildPage()
+        {
+            _pageRoot = RetainedUiKit.CreateRect("PageView", _panel);
+            _pageRoot.anchorMin = Vector2.zero;
+            _pageRoot.anchorMax = Vector2.one;
+            _pageRoot.offsetMin = new Vector2(10f, 25f);
+            _pageRoot.offsetMax = new Vector2(-10f, -74f);
+
+            RectTransform row = RetainedUiKit.CreateRect("Actions", _pageRoot);
+            RetainedUiKit.AnchorTopStretch(row, 0f, 0f, 0f, 30f);
+
+            _nameInput = RetainedUiKit.AddInputField("TabName", row, string.Empty, false, JournalCore.MaxTabNameLength);
+            RectTransform nr = _nameInput.GetComponent<RectTransform>();
+            nr.anchorMin = new Vector2(0f, 0f); nr.anchorMax = new Vector2(1f, 1f); nr.pivot = new Vector2(0f, 0.5f);
+            nr.offsetMin = new Vector2(0f, 2f); nr.offsetMax = new Vector2(-220f, -2f);
+            _nameInput.onValueChanged.AddListener(delegate(string value) { OnNameChanged(value); });
+
+            AddFixedButton(row, "Timestamp", "Timestamp", -214f, 70f, delegate { InsertTimestamp(); }, false);
+            AddFixedButton(row, "Copy", "Copy", -140f, 46f, delegate { CopySelected(); }, false);
+            _deleteButton = AddFixedButton(row, "Delete", "Delete", -90f, 64f, delegate { DeleteSelected(); }, true);
+            _deleteLabel = _deleteButton.GetComponentInChildren<TextMeshProUGUI>();
+
+            _noteInput = RetainedUiKit.AddInputField("Note", _pageRoot, string.Empty, true, 0);
+            RectTransform note = _noteInput.GetComponent<RectTransform>();
+            note.anchorMin = Vector2.zero;
+            note.anchorMax = Vector2.one;
+            note.offsetMin = new Vector2(0f, 24f);
+            note.offsetMax = new Vector2(0f, -34f);
+            _noteInput.onValueChanged.AddListener(delegate(string value) { OnNoteChanged(value); });
+
+            _pageFooter = RetainedUiKit.AddLabel("Footer", _pageRoot, string.Empty, 10f, FontStyles.Normal, TextAlignmentOptions.MidlineRight);
+            _pageFooter.rectTransform.anchorMin = new Vector2(0f, 0f);
+            _pageFooter.rectTransform.anchorMax = new Vector2(1f, 0f);
+            _pageFooter.rectTransform.pivot = new Vector2(0.5f, 0f);
+            _pageFooter.rectTransform.offsetMin = new Vector2(0f, 0f);
+            _pageFooter.rectTransform.offsetMax = new Vector2(0f, 20f);
+        }
+
+        private void BuildChronicle()
+        {
+            _chronicleRoot = RetainedUiKit.CreateRect("ChronicleView", _panel);
+            _chronicleRoot.anchorMin = Vector2.zero;
+            _chronicleRoot.anchorMax = Vector2.one;
+            _chronicleRoot.offsetMin = new Vector2(10f, 25f);
+            _chronicleRoot.offsetMax = new Vector2(-10f, -74f);
+
+            RectTransform row = RetainedUiKit.CreateRect("Actions", _chronicleRoot);
+            RetainedUiKit.AnchorTopStretch(row, 0f, 0f, 0f, 30f);
+            TextMeshProUGUI heading = RetainedUiKit.AddLabel("Heading", row, "CHRONICLE", 12f, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
+            heading.rectTransform.anchorMin = Vector2.zero; heading.rectTransform.anchorMax = Vector2.one;
+            heading.rectTransform.offsetMin = Vector2.zero; heading.rectTransform.offsetMax = new Vector2(-120f, 0f);
+            AddFixedButton(row, "Copy", "Copy", -116f, 48f, delegate { CopyChronicle(); }, false);
+            _clearButton = AddFixedButton(row, "Clear", "Clear", -64f, 64f, delegate { ClearChronicle(); }, true);
+            _clearLabel = _clearButton.GetComponentInChildren<TextMeshProUGUI>();
+
+            RectTransform viewport;
+            RectTransform content;
+            ScrollRect scroll = RetainedUiKit.AddScrollRect("ChronicleScroll", _chronicleRoot, false, true, out viewport, out content);
+            RectTransform sr = scroll.GetComponent<RectTransform>();
+            sr.anchorMin = Vector2.zero; sr.anchorMax = Vector2.one;
+            sr.offsetMin = new Vector2(0f, 24f); sr.offsetMax = new Vector2(0f, -34f);
+            _chronicleContent = RetainedUiKit.AddVerticalContent("Rows", viewport, 7f, 4);
+            scroll.content = _chronicleContent;
+
+            _chronicleFooter = RetainedUiKit.AddLabel("Footer", _chronicleRoot, string.Empty, 10f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+            _chronicleFooter.rectTransform.anchorMin = new Vector2(0f, 0f);
+            _chronicleFooter.rectTransform.anchorMax = new Vector2(1f, 0f);
+            _chronicleFooter.rectTransform.pivot = new Vector2(0.5f, 0f);
+            _chronicleFooter.rectTransform.offsetMin = new Vector2(0f, 0f);
+            _chronicleFooter.rectTransform.offsetMax = new Vector2(0f, 20f);
+        }
+
+        internal void Tick(bool visible, JournalDocument document, Action markDirty)
+        {
+            if (_root == null) return;
+            if (_root.activeSelf != visible) _root.SetActive(visible);
+            if (!visible) return;
+            if (_position != null) _position.Resolve(_panel);
+
             _document = document;
             _markDirty = markDirty;
-            _requestClose = false;
-            _currentWindowRect = rect;
-            _resizeDelta = Vector2.zero;
+            if (_document == null) return;
+            JournalCore.Normalize(_document);
 
-            int previousDepth = GUI.depth;
-            Rect result;
-            try
+            string signature = BuildTabSignature();
+            if (!string.Equals(signature, _tabSignature, StringComparison.Ordinal))
             {
-                GUI.depth = -60;
-                result = GUI.Window(WindowId, rect, DrawWindowContents, GUIContent.none, _windowStyle);
-            }
-            finally
-            {
-                GUI.depth = previousDepth;
+                _tabSignature = signature;
+                RebuildTabs();
             }
 
-            if (_resizeDelta != Vector2.zero)
+            RefreshTabVisuals();
+            BindSelectedTab();
+            if (_chronicleCount != _document.Chronicle.Count)
             {
-                result.width += _resizeDelta.x;
-                result.height += _resizeDelta.y;
+                _chronicleCount = _document.Chronicle.Count;
+                RebuildChronicleRows();
             }
 
-            string focused = GUI.GetNameOfFocusedControl();
-            _textInputFocused = !_showChronicle &&
-                (string.Equals(focused, TabNameControl, StringComparison.Ordinal) ||
-                 string.Equals(focused, NoteTextControl, StringComparison.Ordinal));
+            if (_deleteLabel != null) _deleteLabel.text = Time.unscaledTime < _deleteArmedUntil ? "Confirm" : "Delete";
+            if (_clearLabel != null) _clearLabel.text = Time.unscaledTime < _clearArmedUntil ? "Confirm" : "Clear";
+            _pageRoot.gameObject.SetActive(!_showChronicle);
+            _chronicleRoot.gameObject.SetActive(_showChronicle);
+        }
 
-            return result;
+        internal void ResetPosition()
+        {
+            if (_position != null) _position.Reset(_panel);
+        }
+
+        internal void ResetTransientState()
+        {
+            _document = null;
+            _markDirty = null;
+            _showChronicle = false;
+            _suppressInput = false;
+            _deleteArmedUntil = 0f;
+            _clearArmedUntil = 0f;
+            _tabSignature = string.Empty;
+            _chronicleCount = -1;
+            _boundTabId = string.Empty;
+            _suppressInput = true;
+            if (_nameInput != null) _nameInput.text = string.Empty;
+            if (_noteInput != null) _noteInput.text = string.Empty;
+            _suppressInput = false;
         }
 
         internal void Dispose()
         {
-            DestroyTexture(ref _panelTexture);
-            DestroyTexture(ref _buttonTexture);
-            DestroyTexture(ref _buttonHoverTexture);
-            DestroyTexture(ref _selectedTexture);
-            DestroyTexture(ref _dangerTexture);
-            DestroyTexture(ref _dangerHoverTexture);
-            DestroyTexture(ref _textTexture);
-            _windowStyle = null;
-            _titleStyle = null;
-            _sectionStyle = null;
-            _textAreaStyle = null;
-            _textFieldStyle = null;
-            _tabStyle = null;
-            _selectedTabStyle = null;
-            _footerStyle = null;
-            _chronicleStyle = null;
-            _buttonStyle = null;
-            _dangerButtonStyle = null;
-            _closeButtonStyle = null;
-            _resizeGripStyle = null;
-            _textInputFocused = false;
+            SuiteDragHandler.ForceReleaseIfOwned();
+            RetainedUiKit.DestroyRoot(ref _root);
+            _panel = null;
+            _tabsContent = null;
+            _chronicleTabButton = null;
+            _tabButtons.Clear();
+            _pageRoot = null;
+            _chronicleRoot = null;
+            _chronicleContent = null;
+            _nameInput = null;
+            _noteInput = null;
+            _document = null;
+            _markDirty = null;
+            _position = null;
+            _tabSignature = string.Empty;
+            _chronicleCount = -1;
+            _boundTabId = string.Empty;
         }
 
-        private void DrawWindowContents(int id)
+        private string BuildTabSignature()
         {
-            GUILayout.BeginVertical();
-            DrawHeader();
-            GUILayout.Space(2f);
-            DrawTabs();
-            GUILayout.Space(2f);
-
-            if (_showChronicle) DrawChronicle();
-            else DrawSelectedTab();
-
-            GUILayout.EndVertical();
-            DrawResizeGrip();
-
-            // Dragging is limited to the title bar. Buttons and note contents do
-            // not double as drag surfaces.
-            GUI.DragWindow(new Rect(0f, 0f, Mathf.Max(0f, _currentWindowRect.width - 42f), HeaderHeight));
-        }
-
-        private void DrawHeader()
-        {
-            GUILayout.BeginHorizontal(GUILayout.Height(HeaderHeight));
-            GUILayout.Label("ERENSHOR JOURNAL", _titleStyle, GUILayout.ExpandWidth(true));
-            if (GUILayout.Button("X", _closeButtonStyle, GUILayout.Width(28f), GUILayout.Height(22f)))
-                _requestClose = true;
-            GUILayout.EndHorizontal();
-        }
-
-        private void DrawTabs()
-        {
-            _tabScroll = GUILayout.BeginScrollView(_tabScroll, false, false, GUILayout.Height(36f));
-            GUILayout.BeginHorizontal();
-
-            if (GUILayout.Button("Chronicle", _showChronicle ? _selectedTabStyle : _tabStyle, GUILayout.MinWidth(90f), GUILayout.Height(27f)))
-            {
-                _showChronicle = true;
-                _deleteArmedUntil = 0f;
-            }
-
+            StringBuilder sb = new StringBuilder();
+            sb.Append(_document.Tabs.Count);
             for (int i = 0; i < _document.Tabs.Count; i++)
             {
                 JournalTab tab = _document.Tabs[i];
-                bool selected = !_showChronicle && i == _document.SelectedTabIndex;
-                if (GUILayout.Button(tab.Name, selected ? _selectedTabStyle : _tabStyle, GUILayout.MinWidth(80f), GUILayout.Height(27f)))
-                {
-                    _showChronicle = false;
-                    _document.SelectedTabIndex = i;
-                    _deleteArmedUntil = 0f;
-                    MarkDirty();
-                }
+                sb.Append('|').Append(tab == null ? "" : tab.Id);
             }
-
-            if (GUILayout.Button("+", _tabStyle, GUILayout.Width(30f), GUILayout.Height(27f)))
-            {
-                if (JournalCore.AddTab(_document))
-                {
-                    _showChronicle = false;
-                    _deleteArmedUntil = 0f;
-                    MarkDirty();
-                }
-            }
-
-            GUILayout.EndHorizontal();
-            GUILayout.EndScrollView();
+            return sb.ToString();
         }
 
-        private void DrawSelectedTab()
+        private void RebuildTabs()
+        {
+            RetainedUiKit.ClearChildren(_tabsContent);
+            _chronicleTabButton = RetainedUiKit.AddButton("Chronicle", _tabsContent, "Chronicle", delegate { SelectChronicle(); }, 92f, 28f, false);
+            _tabButtons.Clear();
+            for (int i = 0; i < _document.Tabs.Count; i++)
+            {
+                int index = i;
+                JournalTab tab = _document.Tabs[i];
+                Button b = RetainedUiKit.AddButton("Tab" + i.ToString(), _tabsContent, tab == null ? "Untitled" : tab.Name,
+                    delegate { SelectTab(index); }, 92f, 28f, false);
+                _tabButtons.Add(b);
+            }
+            RetainedUiKit.AddButton("AddTab", _tabsContent, "+", delegate { AddTab(); }, 30f, 28f, false);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_tabsContent);
+        }
+
+        private void RefreshTabVisuals()
+        {
+            SetSelected(_chronicleTabButton, _showChronicle);
+            for (int i = 0; i < _tabButtons.Count && i < _document.Tabs.Count; i++)
+            {
+                Button button = _tabButtons[i];
+                JournalTab tab = _document.Tabs[i];
+                if (button != null)
+                {
+                    TextMeshProUGUI label = button.GetComponentInChildren<TextMeshProUGUI>();
+                    string expected = tab == null ? "Untitled" : (tab.Name ?? string.Empty);
+                    if (label != null && !string.Equals(label.text, expected, StringComparison.Ordinal))
+                        label.text = expected;
+                    SetSelected(button, !_showChronicle && i == _document.SelectedTabIndex);
+                }
+            }
+        }
+
+        private void BindSelectedTab()
         {
             if (_document.Tabs.Count == 0) return;
             JournalTab tab = _document.Tabs[_document.SelectedTabIndex];
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("PAGE", _sectionStyle, GUILayout.Width(38f));
-            GUI.SetNextControlName(TabNameControl);
-            string newName = GUILayout.TextField(tab.Name, JournalCore.MaxTabNameLength, _textFieldStyle, GUILayout.MinWidth(130f), GUILayout.Height(24f));
-            if (!string.Equals(newName, tab.Name, StringComparison.Ordinal))
+            if (tab == null) return;
+            if (!string.Equals(_boundTabId, tab.Id, StringComparison.Ordinal))
             {
-                tab.Name = JournalCore.CleanTabName(newName);
-                MarkDirty();
+                _boundTabId = tab.Id;
+                _suppressInput = true;
+                _nameInput.text = tab.Name ?? string.Empty;
+                _noteInput.text = tab.Text ?? string.Empty;
+                _suppressInput = false;
             }
-
-            if (GUILayout.Button("Timestamp", _buttonStyle, GUILayout.Width(78f), GUILayout.Height(24f)))
+            else if (!_nameInput.isFocused && !string.Equals(_nameInput.text, tab.Name ?? string.Empty, StringComparison.Ordinal))
             {
-                string prefix = string.IsNullOrEmpty(tab.Text) || tab.Text.EndsWith("\n", StringComparison.Ordinal) ? string.Empty : Environment.NewLine;
-                tab.Text += prefix + "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm") + "] ";
-                MarkDirty();
+                _suppressInput = true; _nameInput.text = tab.Name ?? string.Empty; _suppressInput = false;
             }
-
-            if (GUILayout.Button("Copy", _buttonStyle, GUILayout.Width(50f), GUILayout.Height(24f)))
-                GUIUtility.systemCopyBuffer = tab.Text ?? string.Empty;
-
-            bool armed = Time.unscaledTime < _deleteArmedUntil;
-            string deleteLabel = armed ? "Confirm" : "Delete";
-            if (GUILayout.Button(deleteLabel, _dangerButtonStyle, GUILayout.Width(64f), GUILayout.Height(24f)))
+            else if (!_noteInput.isFocused && !string.Equals(_noteInput.text, tab.Text ?? string.Empty, StringComparison.Ordinal))
             {
-                if (!armed)
-                {
-                    _deleteArmedUntil = Time.unscaledTime + 4f;
-                }
-                else if (JournalCore.DeleteSelectedTab(_document))
-                {
-                    _deleteArmedUntil = 0f;
-                    MarkDirty();
-                }
+                _suppressInput = true; _noteInput.text = tab.Text ?? string.Empty; _suppressInput = false;
             }
-            GUILayout.EndHorizontal();
-            GUILayout.Space(3f);
-
-            string oldText = tab.Text ?? string.Empty;
-            GUI.SetNextControlName(NoteTextControl);
-            string newText = GUILayout.TextArea(oldText, _textAreaStyle, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
-            if (!string.Equals(oldText, newText, StringComparison.Ordinal))
-            {
-                tab.Text = newText;
-                MarkDirty();
-            }
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Local notes - autosaved", _footerStyle, GUILayout.ExpandWidth(true));
-            GUILayout.Label((tab.Text == null ? 0 : tab.Text.Length).ToString() + " chars", _footerStyle, GUILayout.Width(80f));
-            GUILayout.EndHorizontal();
+            if (_pageFooter != null) _pageFooter.text = (tab.Text == null ? 0 : tab.Text.Length).ToString() + " characters";
         }
 
-        private void DrawChronicle()
+        private void RebuildChronicleRows()
         {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("CHRONICLE", _sectionStyle, GUILayout.ExpandWidth(true));
-            GUILayout.Label(_document.Chronicle.Count.ToString() + " entries", _footerStyle, GUILayout.Width(75f));
-
-            if (GUILayout.Button("Copy", _buttonStyle, GUILayout.Width(50f), GUILayout.Height(24f)))
-                GUIUtility.systemCopyBuffer = BuildChronicleText(_document);
-
-            bool armed = Time.unscaledTime < _clearChronicleArmedUntil;
-            string clearLabel = armed ? "Confirm" : "Clear";
-            if (GUILayout.Button(clearLabel, _dangerButtonStyle, GUILayout.Width(64f), GUILayout.Height(24f)))
-            {
-                if (!armed)
-                {
-                    _clearChronicleArmedUntil = Time.unscaledTime + 4f;
-                }
-                else
-                {
-                    _document.Chronicle.Clear();
-                    _clearChronicleArmedUntil = 0f;
-                    MarkDirty();
-                }
-            }
-            GUILayout.EndHorizontal();
-
-            _chronicleScroll = GUILayout.BeginScrollView(_chronicleScroll, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+            RetainedUiKit.ClearChildren(_chronicleContent);
             int start = Math.Max(0, _document.Chronicle.Count - ChronicleVisibleLimit);
             if (_document.Chronicle.Count == 0)
             {
-                GUILayout.Label("No Chronicle entries yet. Compatible mods can append verified events through JournalApi; your normal tabs remain fully player-owned.", _chronicleStyle);
+                AddChronicleRow("No Chronicle entries yet. Compatible mods can append verified events through JournalApi; normal tabs remain player-owned.");
             }
             else
             {
@@ -284,60 +361,126 @@ namespace ErenshorJournal
                     string prefix = local.ToString("yyyy-MM-dd HH:mm");
                     if (!string.IsNullOrWhiteSpace(entry.Category)) prefix += "  [" + entry.Category + "]";
                     if (!string.IsNullOrWhiteSpace(entry.Source)) prefix += "  " + entry.Source;
-                    GUILayout.Label(prefix + Environment.NewLine + entry.Text, _chronicleStyle);
-                    GUILayout.Space(6f);
+                    AddChronicleRow(prefix + Environment.NewLine + entry.Text);
                 }
             }
-            GUILayout.EndScrollView();
-
-            if (start > 0)
-                GUILayout.Label("Showing the latest " + ChronicleVisibleLimit.ToString() + " entries; older entries remain saved and are included by Copy.", _footerStyle);
-            else
-                GUILayout.Label("Append-only integration history; the Journal itself does not infer game events.", _footerStyle);
+            if (_chronicleFooter != null)
+                _chronicleFooter.text = start > 0
+                    ? "Showing latest " + ChronicleVisibleLimit.ToString() + "; older entries remain saved and are included by Copy."
+                    : "Append-only integration history; Journal does not infer game events.";
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_chronicleContent);
         }
 
-        private void DrawResizeGrip()
+        private void AddChronicleRow(string value)
         {
-            Rect grip = new Rect(Mathf.Max(0f, _currentWindowRect.width - 22f), Mathf.Max(0f, _currentWindowRect.height - 20f), 18f, 16f);
-            GUI.Label(grip, "//", _resizeGripStyle);
+            TextMeshProUGUI label = RetainedUiKit.AddLabel("Entry", _chronicleContent, value, 11f, FontStyles.Normal, TextAlignmentOptions.TopLeft);
+            label.color = RetainedUiKit.Text;
+            LayoutElement le = label.gameObject.AddComponent<LayoutElement>();
+            le.minHeight = 32f;
+            le.preferredHeight = Mathf.Max(32f, label.preferredHeight + 8f);
+        }
 
-            Event current = Event.current;
-            if (current == null) return;
+        private void SelectChronicle()
+        {
+            _showChronicle = true;
+            _deleteArmedUntil = 0f;
+        }
 
-            if (!_resizing && current.type == EventType.MouseDown && current.button == 0 && grip.Contains(current.mousePosition))
+        private void SelectTab(int index)
+        {
+            if (_document == null || index < 0 || index >= _document.Tabs.Count) return;
+            _showChronicle = false;
+            _document.SelectedTabIndex = index;
+            _deleteArmedUntil = 0f;
+            _boundTabId = string.Empty;
+            MarkDirty();
+        }
+
+        private void AddTab()
+        {
+            if (_document == null || !JournalCore.AddTab(_document)) return;
+            _showChronicle = false;
+            _boundTabId = string.Empty;
+            MarkDirty();
+            _tabSignature = string.Empty;
+        }
+
+        private void OnNameChanged(string value)
+        {
+            if (_suppressInput || _document == null || _showChronicle || _document.Tabs.Count == 0) return;
+            JournalTab tab = _document.Tabs[_document.SelectedTabIndex];
+            tab.Name = JournalCore.CleanTabName(value);
+            MarkDirty();
+        }
+
+        private void OnNoteChanged(string value)
+        {
+            if (_suppressInput || _document == null || _showChronicle || _document.Tabs.Count == 0) return;
+            _document.Tabs[_document.SelectedTabIndex].Text = value ?? string.Empty;
+            MarkDirty();
+        }
+
+        private void InsertTimestamp()
+        {
+            if (_document == null || _document.Tabs.Count == 0) return;
+            JournalTab tab = _document.Tabs[_document.SelectedTabIndex];
+            string prefix = string.IsNullOrEmpty(tab.Text) || tab.Text.EndsWith("\n", StringComparison.Ordinal) ? string.Empty : Environment.NewLine;
+            tab.Text += prefix + "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm") + "] ";
+            _suppressInput = true; _noteInput.text = tab.Text; _suppressInput = false;
+            MarkDirty();
+        }
+
+        private void CopySelected()
+        {
+            if (_document == null || _document.Tabs.Count == 0) return;
+            GUIUtility.systemCopyBuffer = _document.Tabs[_document.SelectedTabIndex].Text ?? string.Empty;
+        }
+
+        private void DeleteSelected()
+        {
+            if (_document == null) return;
+            if (Time.unscaledTime >= _deleteArmedUntil)
             {
-                _resizing = true;
-                current.Use();
+                _deleteArmedUntil = Time.unscaledTime + 4f;
                 return;
             }
-
-            if (_resizing && current.type == EventType.MouseDrag && current.button == 0)
+            if (JournalCore.DeleteSelectedTab(_document))
             {
-                _resizeDelta += current.delta;
-                current.Use();
-                return;
-            }
-
-            if (_resizing && current.type == EventType.MouseUp && current.button == 0)
-            {
-                _resizing = false;
-                current.Use();
+                _deleteArmedUntil = 0f;
+                _boundTabId = string.Empty;
+                MarkDirty();
+                _tabSignature = string.Empty;
             }
         }
 
-        private static string BuildChronicleText(JournalDocument document)
+        private void CopyChronicle()
         {
+            if (_document == null) return;
             StringBuilder builder = new StringBuilder();
-            for (int i = 0; i < document.Chronicle.Count; i++)
+            for (int i = 0; i < _document.Chronicle.Count; i++)
             {
-                JournalChronicleEntry entry = document.Chronicle[i];
+                JournalChronicleEntry entry = _document.Chronicle[i];
                 DateTime local = entry.TimestampUtc.Kind == DateTimeKind.Utc ? entry.TimestampUtc.ToLocalTime() : entry.TimestampUtc;
                 builder.Append(local.ToString("yyyy-MM-dd HH:mm"));
                 if (!string.IsNullOrWhiteSpace(entry.Category)) builder.Append(" [").Append(entry.Category).Append("]");
                 if (!string.IsNullOrWhiteSpace(entry.Source)) builder.Append(" ").Append(entry.Source);
                 builder.Append(": ").Append(entry.Text).AppendLine();
             }
-            return builder.ToString();
+            GUIUtility.systemCopyBuffer = builder.ToString();
+        }
+
+        private void ClearChronicle()
+        {
+            if (_document == null) return;
+            if (Time.unscaledTime >= _clearArmedUntil)
+            {
+                _clearArmedUntil = Time.unscaledTime + 4f;
+                return;
+            }
+            _document.Chronicle.Clear();
+            _clearArmedUntil = 0f;
+            _chronicleCount = -1;
+            MarkDirty();
         }
 
         private void MarkDirty()
@@ -345,113 +488,29 @@ namespace ErenshorJournal
             if (_markDirty != null) _markDirty();
         }
 
-        private void EnsureStyles()
+        private static void SetSelected(Button button, bool selected)
         {
-            if (_windowStyle != null) return;
-
-            Color cyanEdge = new Color(0.03f, 0.67f, 0.86f, 0.95f);
-            Color softEdge = new Color(0.13f, 0.55f, 0.68f, 0.90f);
-            _panelTexture = FramedTexture(new Color(0.015f, 0.09f, 0.125f, 0.90f), cyanEdge);
-            _buttonTexture = FramedTexture(new Color(0.035f, 0.17f, 0.22f, 0.88f), softEdge);
-            _buttonHoverTexture = FramedTexture(new Color(0.12f, 0.38f, 0.48f, 0.94f), cyanEdge);
-            _selectedTexture = FramedTexture(new Color(0.08f, 0.30f, 0.36f, 0.96f), cyanEdge);
-            _dangerTexture = FramedTexture(new Color(0.19f, 0.15f, 0.09f, 0.90f), new Color(0.65f, 0.49f, 0.27f, 0.92f));
-            _dangerHoverTexture = FramedTexture(new Color(0.34f, 0.23f, 0.10f, 0.96f), new Color(0.86f, 0.63f, 0.30f, 0.98f));
-            _textTexture = FramedTexture(new Color(0.018f, 0.055f, 0.068f, 0.92f), softEdge);
-
-            _windowStyle = new GUIStyle(GUI.skin.window);
-            _windowStyle.normal.background = _panelTexture;
-            _windowStyle.border = new RectOffset(1, 1, 1, 1);
-            _windowStyle.padding = new RectOffset(12, 12, 8, 10);
-
-            _titleStyle = new GUIStyle(GUI.skin.label);
-            _titleStyle.fontSize = 15;
-            _titleStyle.fontStyle = FontStyle.Bold;
-            _titleStyle.normal.textColor = new Color(0.56f, 0.88f, 1f, 1f);
-
-            _sectionStyle = new GUIStyle(GUI.skin.label);
-            _sectionStyle.fontSize = 11;
-            _sectionStyle.fontStyle = FontStyle.Bold;
-            _sectionStyle.normal.textColor = new Color(0.56f, 0.78f, 0.88f, 1f);
-
-            _buttonStyle = CreateButtonStyle(_buttonTexture, _buttonHoverTexture, Color.white);
-            _dangerButtonStyle = CreateButtonStyle(_dangerTexture, _dangerHoverTexture, new Color(1f, 0.94f, 0.74f, 1f));
-            _closeButtonStyle = CreateButtonStyle(_buttonTexture, _buttonHoverTexture, new Color(0.84f, 0.94f, 1f, 1f));
-
-            _tabStyle = CreateButtonStyle(_buttonTexture, _buttonHoverTexture, new Color(0.84f, 0.94f, 1f, 1f));
-            _tabStyle.fontSize = 11;
-            _tabStyle.clipping = TextClipping.Clip;
-
-            _selectedTabStyle = CreateButtonStyle(_selectedTexture, _buttonHoverTexture, new Color(0.88f, 1f, 0.98f, 1f));
-            _selectedTabStyle.fontSize = 11;
-            _selectedTabStyle.fontStyle = FontStyle.Bold;
-            _selectedTabStyle.clipping = TextClipping.Clip;
-
-            _textAreaStyle = new GUIStyle(GUI.skin.textArea);
-            _textAreaStyle.fontSize = 13;
-            _textAreaStyle.wordWrap = true;
-            _textAreaStyle.padding = new RectOffset(9, 9, 8, 8);
-            _textAreaStyle.normal.background = _textTexture;
-            _textAreaStyle.focused.background = _textTexture;
-            _textAreaStyle.hover.background = _textTexture;
-            _textAreaStyle.normal.textColor = new Color(0.92f, 0.94f, 0.92f, 1f);
-            _textAreaStyle.focused.textColor = Color.white;
-
-            _textFieldStyle = new GUIStyle(GUI.skin.textField);
-            _textFieldStyle.fontSize = 12;
-            _textFieldStyle.normal.background = _textTexture;
-            _textFieldStyle.focused.background = _textTexture;
-            _textFieldStyle.hover.background = _textTexture;
-            _textFieldStyle.normal.textColor = new Color(0.92f, 0.94f, 0.92f, 1f);
-            _textFieldStyle.focused.textColor = Color.white;
-
-            _footerStyle = new GUIStyle(GUI.skin.label);
-            _footerStyle.fontSize = 10;
-            _footerStyle.normal.textColor = new Color(0.63f, 0.73f, 0.74f, 1f);
-
-            _chronicleStyle = new GUIStyle(GUI.skin.label);
-            _chronicleStyle.fontSize = 12;
-            _chronicleStyle.wordWrap = true;
-            _chronicleStyle.normal.textColor = new Color(0.88f, 0.92f, 0.91f, 1f);
-
-            _resizeGripStyle = new GUIStyle(GUI.skin.label);
-            _resizeGripStyle.fontSize = 11;
-            _resizeGripStyle.alignment = TextAnchor.MiddleCenter;
-            _resizeGripStyle.normal.textColor = new Color(0.56f, 0.88f, 1f, 0.90f);
+            if (button == null) return;
+            Image image = button.GetComponent<Image>();
+            if (image != null) image.color = selected ? RetainedUiKit.Selected : RetainedUiKit.Button;
         }
 
-        private static GUIStyle CreateButtonStyle(Texture2D normal, Texture2D hover, Color text)
+        private static Button AddFixedButton(RectTransform parent, string name, string label, float right, float width, Action action, bool danger)
         {
-            GUIStyle style = new GUIStyle(GUI.skin.button);
-            style.normal.background = normal;
-            style.hover.background = hover;
-            style.active.background = hover;
-            style.normal.textColor = text;
-            style.hover.textColor = Color.white;
-            style.active.textColor = Color.white;
-            style.margin = new RectOffset(2, 2, 2, 2);
-            style.border = new RectOffset(1, 1, 1, 1);
-            style.padding = new RectOffset(6, 6, 2, 2);
-            return style;
+            Button b = RetainedUiKit.AddButton(name, parent, label, action, width, 26f, danger);
+            RectTransform r = b.GetComponent<RectTransform>();
+            RemoveLayout(r);
+            r.anchorMin = r.anchorMax = new Vector2(1f, 0.5f);
+            r.pivot = new Vector2(1f, 0.5f);
+            r.anchoredPosition = new Vector2(right, 0f);
+            r.sizeDelta = new Vector2(width, 26f);
+            return b;
         }
 
-        private static Texture2D FramedTexture(Color center, Color edge)
+        private static void RemoveLayout(RectTransform rect)
         {
-            Texture2D texture = new Texture2D(3, 3, TextureFormat.RGBA32, false);
-            for (int y = 0; y < 3; y++)
-                for (int x = 0; x < 3; x++)
-                    texture.SetPixel(x, y, x == 0 || x == 2 || y == 0 || y == 2 ? edge : center);
-            texture.wrapMode = TextureWrapMode.Clamp;
-            texture.filterMode = FilterMode.Point;
-            texture.Apply(false, true);
-            return texture;
-        }
-
-        private static void DestroyTexture(ref Texture2D texture)
-        {
-            if (texture == null) return;
-            UnityEngine.Object.Destroy(texture);
-            texture = null;
+            LayoutElement le = rect.GetComponent<LayoutElement>();
+            if (le != null) UnityEngine.Object.DestroyImmediate(le);
         }
     }
 }

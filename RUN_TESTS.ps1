@@ -51,3 +51,12 @@ $legacyOut = Join-Path $env:TEMP "ErenshorJournalLegacyMigrationTests.exe"
 if ($LASTEXITCODE -ne 0) { throw "Journal legacy migration tests did not compile." }
 & $legacyOut
 if ($LASTEXITCODE -ne 0) { throw "Journal legacy migration tests failed." }
+
+# Unity-free retained-UI visibility/fallback, action routing, strict bool mutation parsing, gesture cleanup, and normalized-position recovery policy.
+$suiteUiOut = Join-Path $env:TEMP "ErenshorJournal.SuiteUiPolicyTests.exe"
+& $csc /nologo /target:exe /out:$suiteUiOut `
+    (Join-Path $ScriptRoot "src\SuiteUiPolicies.cs") `
+    (Join-Path $ScriptRoot "tests\SuiteUiPolicyTests.cs")
+if ($LASTEXITCODE -ne 0) { throw "Suite UI policy tests did not compile." }
+& $suiteUiOut
+if ($LASTEXITCODE -ne 0) { throw "Suite UI policy tests failed." }

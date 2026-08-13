@@ -2,14 +2,13 @@ using System;
 using System.IO;
 using Lunaris;
 using Lunaris.Config;
-using HarmonyLib;
 using UnityEngine;
 
 namespace ErenshorJournal
 {
     [LunarisPlugin(PluginGuid, PluginVersion, "forgetwhtuno",
         "A small local, freeform player notebook with an optional Chronicle sink for verified events from other mods.")]
-    [LunarisPermission(LunarisPermission.FileAccess | LunarisPermission.Harmony)]
+    [LunarisPermission(LunarisPermission.FileAccess)]
     public sealed class ErenshorJournalPlugin : LunarisPlugin
     {
         internal const string PluginGuid = "forgetwhtuno.erenshor.journal";
@@ -17,12 +16,13 @@ namespace ErenshorJournal
         internal const string PluginVersion = "0.1.3";
 
         internal static ErenshorJournalPlugin Instance;
-        private Harmony _harmony;
         private bool _forcedPlayerTyping;
+        private JournalSuiteAuraProvider _auraProvider;
 
         private JournalSettings _settings;
         private JournalConfigEntry<float> _launcherX;
         private JournalConfigEntry<float> _launcherY;
+        private JournalConfigEntry<bool> _showStandaloneLauncherWithHub;
         private JournalConfigEntry<float> _windowX;
         private JournalConfigEntry<float> _windowY;
         private JournalConfigEntry<float> _windowWidth;
@@ -33,13 +33,12 @@ namespace ErenshorJournal
         private JournalDocument _document;
         private JournalWindow _window;
         private JournalLauncher _launcher;
-        private Rect _windowRect;
-        private Rect _launcherRect;
         private bool _open;
         private bool _dirty;
         private float _saveAfter;
-        private bool _launcherDirty;
-        private float _launcherSaveAfter;
+        private bool _pendingExternalOpen;
+        private bool _pendingExternalClose;
+        private bool _pendingLauncherToggle;
         private bool _cursorVisibleBeforeOpen;
         private CursorLockMode _cursorLockBeforeOpen;
 
@@ -70,11 +69,10 @@ namespace ErenshorJournal
             // or character-select).
             _window = new JournalWindow();
             _launcher = new JournalLauncher();
-            _windowRect = ResolveInitialRect();
-            _launcherRect = ResolveInitialLauncherRect();
+            InitializeRetainedUi();
 
-            _harmony = new Harmony(PluginGuid);
-            _harmony.PatchAll();
+            try { _auraProvider = new JournalSuiteAuraProvider(this); }
+            catch (Exception ex) { Logging.LogWarning("[Journal] Suite Aura provider failed to register: " + ex.Message); }
 
             Logging.LogInfo("Erenshor Journal " + PluginVersion + " loaded. The draggable Journal UI button appears once a character is loaded into the world. Journal does not register a global hotkey. Notes remain local, per character, and are never logged or networked.");
         }
@@ -83,6 +81,7 @@ namespace ErenshorJournal
         {
             _launcherX = new JournalConfigEntry<float>(delegate { return _settings.LauncherX; }, delegate(float v) { _settings.LauncherX = v; });
             _launcherY = new JournalConfigEntry<float>(delegate { return _settings.LauncherY; }, delegate(float v) { _settings.LauncherY = v; });
+            _showStandaloneLauncherWithHub = new JournalConfigEntry<bool>(delegate { return _settings.ShowStandaloneLauncherWithHub; }, delegate(bool v) { _settings.ShowStandaloneLauncherWithHub = v; });
             _windowX = new JournalConfigEntry<float>(delegate { return _settings.WindowX; }, delegate(float v) { _settings.WindowX = v; });
             _windowY = new JournalConfigEntry<float>(delegate { return _settings.WindowY; }, delegate(float v) { _settings.WindowY = v; });
             _windowWidth = new JournalConfigEntry<float>(delegate { return _settings.WindowWidth; }, delegate(float v) { _settings.WindowWidth = v; });
@@ -146,8 +145,7 @@ namespace ErenshorJournal
 
             // Rebuild transient UI state (scroll positions, delete-arm timers, cached styles/textures)
             // so nothing from the previous character's session lingers.
-            if (_window != null) _window.Dispose();
-            _window = new JournalWindow();
+            if (_window != null) _window.ResetTransientState();
         }
 
         private void Update()
@@ -155,10 +153,17 @@ namespace ErenshorJournal
             try
             {
                 bool ready = RefreshReadyState();
+                if (_pendingExternalClose) { _pendingExternalClose = false; if (_open) CloseJournal(); }
+                if (_pendingExternalOpen) { _pendingExternalOpen = false; if (ready && !_open) OpenJournal(); }
+                if (_pendingLauncherToggle)
+                {
+                    _pendingLauncherToggle = false;
+                    if (ready) ToggleJournal();
+                }
+
                 if (ready)
                 {
                     EnsureCharacterContext();
-
                     if (_document != null)
                     {
                         PendingChronicleEntry pending;
@@ -171,57 +176,27 @@ namespace ErenshorJournal
                         if (appended) MarkDirty();
                     }
                 }
+                else
+                {
+                    SuiteDragHandler.ForceReleaseIfOwned();
+                }
+
+                bool bridgeRegistered = _auraProvider != null && _auraProvider.Registered;
+                bool showLauncher = SuiteUiPolicy.ShouldShowStandaloneLauncher(
+                    bridgeRegistered,
+                    _showStandaloneLauncherWithHub != null && _showStandaloneLauncherWithHub.Value);
+
+                if (_launcher != null) _launcher.Tick(showLauncher, _open);
+                if (_window != null) _window.Tick(ready && _open, _document, MarkDirty);
+                UpdatePlayerTyping(ready && _open && _window != null && _window.IsTextInputFocused);
 
                 if (_dirty && Time.unscaledTime >= _saveAfter) SaveNow();
-                if (_launcherDirty && Time.unscaledTime >= _launcherSaveAfter) PersistLauncherRect();
             }
             catch (Exception ex)
             {
+                try { SuiteDragHandler.ForceReleaseIfOwned(); } catch { }
+                try { UpdatePlayerTyping(false); } catch { }
                 Logging.LogError("Erenshor Journal update failed: " + ex);
-            }
-        }
-
-        private void OnGUI()
-        {
-            try
-            {
-                // Recomputed fresh here too (not just read from the field Update() last wrote) so
-                // the launcher/window can never be drawn for a stray frame if OnGUI happens to run
-                // ahead of Update() in Unity's event ordering. NOT READY -> nothing is drawn at all.
-                bool ready = RefreshReadyState();
-                if (!ready) return;
-
-                EnsureCharacterContext();
-                if (_document == null || _window == null || _launcher == null) return;
-
-                bool textFocused = false;
-                if (_open)
-                {
-                    if (Diagnostics) Logging.LogInfo("[Journal][diag] window.Draw entering; rect=" + _windowRect);
-                    _windowRect = ClampRect(_window.Draw(_windowRect, _document, MarkDirty));
-                    textFocused = _window.IsTextInputFocused;
-                    if (_window.RequestClose)
-                    {
-                        if (Diagnostics) Logging.LogInfo("[Journal][diag] window requested close.");
-                        CloseJournal();
-                    }
-                }
-                UpdatePlayerTyping(textFocused);
-
-                Rect previousLauncherRect = _launcherRect;
-                _launcherRect = ClampLauncherRect(_launcher.Draw(_launcherRect, _open));
-                if (!RectsNearlyEqual(previousLauncherRect, _launcherRect)) MarkLauncherDirty();
-                if (_launcher.RequestToggle)
-                {
-                    if (Diagnostics) Logging.LogInfo("[Journal][diag] launcher click seen; open-before=" + _open);
-                    ToggleJournal();
-                    if (Diagnostics) Logging.LogInfo("[Journal][diag] ToggleJournal handled; open-after=" + _open);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logging.LogError("Erenshor Journal UI failed: " + ex);
-                if (_open) CloseJournal();
             }
         }
 
@@ -241,35 +216,43 @@ namespace ErenshorJournal
             _forcedPlayerTyping = decision.NextForcedState;
         }
 
-        // True while the pointer (already converted to GUI screen-space by the caller) is over
-        // the journal window or its launcher button. The click-passthrough Harmony patches below
-        // use this so a click on the panel cannot also drop the player's world target or spin
-        // the camera.
-        internal bool PointerIsOverUi(Vector2 guiPoint)
-        {
-            if (!_ready) return false;
-            if (_open && _windowRect.Contains(guiPoint)) return true;
-            if (_launcherRect.Contains(guiPoint)) return true;
-            return false;
-        }
 
         private void OnDestroy()
         {
-            try { JournalCameraLookPatch.Restore(); } catch { }
+            try { if (_auraProvider != null) _auraProvider.Unregister(); } catch { }
+            _auraProvider = null;
             try { SaveNow(); } catch { }
-            try { PersistWindowRect(); } catch { }
-            try { PersistLauncherRect(); } catch { }
             try { UpdatePlayerTyping(false); } catch { }
             try { NativeTypingOwnership.Reset(); } catch { }
+            try { SuiteDragHandler.ForceReleaseIfOwned(); } catch { }
             try { if (_window != null) _window.Dispose(); } catch { }
             try { if (_launcher != null) _launcher.Dispose(); } catch { }
             try { if (_open) RestoreCursor(); } catch { }
-            try { if (_harmony != null) _harmony.UnpatchSelf(); } catch { }
             _window = null;
             _launcher = null;
             _document = null;
             _store = null;
+            _pendingLauncherToggle = false;
+            _pendingExternalOpen = false;
+            _pendingExternalClose = false;
+            SuiteUiPolicy.Reset();
             if (Instance == this) Instance = null;
+        }
+
+        internal bool ControlPanelOpen { get { return _open; } }
+        internal string ControlCharacterKey { get { return _characterKey ?? string.Empty; } }
+        internal JournalDocument ControlDocument { get { return _document; } }
+        internal bool ControlShowStandaloneLauncher { get { return _showStandaloneLauncherWithHub != null && _showStandaloneLauncherWithHub.Value; } }
+        internal void SetShowStandaloneLauncher(bool value)
+        {
+            if (_showStandaloneLauncherWithHub != null) _showStandaloneLauncherWithHub.Value = value;
+            try { Config.Save(); } catch { }
+        }
+        internal void RequestOpenJournal() { _pendingExternalOpen = true; }
+        internal void RequestCloseJournal() { _pendingExternalClose = true; }
+        internal void ResetLauncherPosition()
+        {
+            if (_launcher != null) _launcher.ResetPosition();
         }
 
         private void ToggleJournal()
@@ -293,7 +276,6 @@ namespace ErenshorJournal
             if (!_open) return;
             _open = false;
             SaveNow();
-            PersistWindowRect();
             RestoreCursor();
         }
 
@@ -307,12 +289,6 @@ namespace ErenshorJournal
         {
             _dirty = true;
             _saveAfter = Time.unscaledTime + 0.8f;
-        }
-
-        private void MarkLauncherDirty()
-        {
-            _launcherDirty = true;
-            _launcherSaveAfter = Time.unscaledTime + 0.8f;
         }
 
         private void SaveNow()
@@ -333,128 +309,45 @@ namespace ErenshorJournal
             }
         }
 
-        private Rect ResolveInitialRect()
+        private void InitializeRetainedUi()
         {
-            float width = Mathf.Clamp(_windowWidth.Value, 520f, Mathf.Max(520f, Screen.width - 20f));
-            float height = Mathf.Clamp(_windowHeight.Value, 360f, Mathf.Max(360f, Screen.height - 20f));
-            float x = _windowX.Value < 0f ? (Screen.width - width) * 0.5f : _windowX.Value;
-            float y = _windowY.Value < 0f ? (Screen.height - height) * 0.5f : _windowY.Value;
-            return ClampRect(new Rect(x, y, width, height));
+            _window.Initialize(
+                _windowX.Value, _windowY.Value, _windowWidth.Value, _windowHeight.Value,
+                PersistWindowPosition, PersistWindowSize, RequestCloseJournal, ResetWindowPosition);
+            _launcher.Initialize(
+                _launcherX.Value, _launcherY.Value,
+                PersistLauncherPosition,
+                delegate { _pendingLauncherToggle = true; });
         }
 
-        private Rect ResolveInitialLauncherRect()
+        private void PersistWindowPosition(float x, float y)
         {
-            float x = _launcherX.Value < 0f ? Mathf.Max(0f, Screen.width - JournalLauncher.Width - 18f) : _launcherX.Value;
-            float y = _launcherY.Value < 0f ? Mathf.Min(Mathf.Max(8f, 128f), Mathf.Max(0f, Screen.height - JournalLauncher.Height)) : _launcherY.Value;
-            return ClampLauncherRect(new Rect(x, y, JournalLauncher.Width, JournalLauncher.Height));
+            if (_windowX == null || _windowY == null) return;
+            _windowX.Value = x;
+            _windowY.Value = y;
+            try { Config.Save(); } catch { }
         }
 
-        private static Rect ClampRect(Rect rect)
+        private void PersistWindowSize(float width, float height)
         {
-            float maxWidth = Mathf.Max(520f, Screen.width - 20f);
-            float maxHeight = Mathf.Max(360f, Screen.height - 20f);
-            rect.width = Mathf.Clamp(rect.width, 520f, maxWidth);
-            rect.height = Mathf.Clamp(rect.height, 360f, maxHeight);
-            rect.x = Mathf.Clamp(rect.x, 0f, Mathf.Max(0f, Screen.width - rect.width));
-            rect.y = Mathf.Clamp(rect.y, 0f, Mathf.Max(0f, Screen.height - rect.height));
-            return rect;
+            if (_windowWidth == null || _windowHeight == null) return;
+            if (float.IsNaN(width) || float.IsInfinity(width) || float.IsNaN(height) || float.IsInfinity(height)) return;
+            _windowWidth.Value = Mathf.Max(520f, width);
+            _windowHeight.Value = Mathf.Max(360f, height);
+            try { Config.Save(); } catch { }
         }
 
-        private static Rect ClampLauncherRect(Rect rect)
-        {
-            rect.width = JournalLauncher.Width;
-            rect.height = JournalLauncher.Height;
-            rect.x = Mathf.Clamp(rect.x, 0f, Mathf.Max(0f, Screen.width - rect.width));
-            rect.y = Mathf.Clamp(rect.y, 0f, Mathf.Max(0f, Screen.height - rect.height));
-            return rect;
-        }
-
-        private void PersistWindowRect()
-        {
-            if (_windowX == null || _windowY == null || _windowWidth == null || _windowHeight == null) return;
-            Rect rect = ClampRect(_windowRect);
-
-            _windowX.Value = rect.x;
-            _windowY.Value = rect.y;
-            _windowWidth.Value = rect.width;
-            _windowHeight.Value = rect.height;
-            Config.Save();
-        }
-
-        private void PersistLauncherRect()
+        private void PersistLauncherPosition(float x, float y)
         {
             if (_launcherX == null || _launcherY == null) return;
-            Rect rect = ClampLauncherRect(_launcherRect);
-
-            _launcherX.Value = rect.x;
-            _launcherY.Value = rect.y;
-            Config.Save();
-            _launcherDirty = false;
+            _launcherX.Value = x;
+            _launcherY.Value = y;
+            try { Config.Save(); } catch { }
         }
 
-        private static bool RectsNearlyEqual(Rect a, Rect b)
+        internal void ResetWindowPosition()
         {
-            return Mathf.Abs(a.x - b.x) < 0.25f &&
-                   Mathf.Abs(a.y - b.y) < 0.25f &&
-                   Mathf.Abs(a.width - b.width) < 0.25f &&
-                   Mathf.Abs(a.height - b.height) < 0.25f;
+            if (_window != null) _window.ResetPosition();
         }
-    }
-
-    // IMGUI doesn't own the raw click Erenshor reads here, so a click on the Journal window or
-    // its launcher would otherwise also affect the world (deselect target, move camera). Same
-    // pattern as Erenshor-PvP's PvpPanelLeftClickPatch / Erenshor Crafting Expanded's
-    // CraftingPanelLeftClickPatch.
-    [HarmonyPatch(typeof(PlayerControl), "LeftClick")]
-    internal static class JournalPanelLeftClickPatch
-    {
-        [HarmonyPrefix]
-        private static bool Prefix()
-        {
-            try
-            {
-                if (ErenshorJournalPlugin.Instance == null) return true;
-                Vector2 mouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
-                return !ErenshorJournalPlugin.Instance.PointerIsOverUi(mouse);
-            }
-            catch { return true; }
-        }
-    }
-
-    [HarmonyPatch(typeof(csMouseOrbit), "LateUpdate")]
-    internal static class JournalCameraLookPatch
-    {
-        private static csMouseOrbit _muted;
-        private static float _mutedX;
-        private static float _mutedY;
-
-        internal static void Restore()
-        {
-            csMouseOrbit orbit = _muted;
-            _muted = null;
-            if (orbit == null) return;
-            try { orbit.xSpeed = _mutedX; orbit.ySpeed = _mutedY; } catch { }
-        }
-
-        [HarmonyPrefix]
-        private static void Prefix(csMouseOrbit __instance)
-        {
-            Restore();
-            try
-            {
-                if (__instance == null || ErenshorJournalPlugin.Instance == null) return;
-                Vector2 mouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
-                if (!ErenshorJournalPlugin.Instance.PointerIsOverUi(mouse)) return;
-                _mutedX = __instance.xSpeed;
-                _mutedY = __instance.ySpeed;
-                __instance.xSpeed = 0f;
-                __instance.ySpeed = 0f;
-                _muted = __instance;
-            }
-            catch { }
-        }
-
-        [HarmonyPostfix]
-        private static void Postfix() { Restore(); }
     }
 }

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$GameDir = "",
     [string]$LunarisLibDir = ""
 )
@@ -47,13 +47,6 @@ function Find-LunarisLibDir([string]$Explicit, [string]$Game) {
     throw "Could not find Lunaris.dll developer reference. Put it in '$ScriptRoot\LunarisLibs' or pass -LunarisLibDir."
 }
 
-function Find-HarmonyDll([string]$LunarisLib, [string]$Managed) {
-    foreach ($candidate in @((Join-Path $LunarisLib "0Harmony.dll"), (Join-Path $Managed "0Harmony.dll"))) {
-        if (Test-Path $candidate) { return $candidate }
-    }
-    throw "Could not find 0Harmony.dll next to Lunaris.dll or in the game's Managed folder."
-}
-
 function Find-Csc {
     foreach ($path in @(
         "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe",
@@ -73,14 +66,14 @@ New-Item -ItemType Directory -Force -Path $pluginRoot | Out-Null
 
 $refs = @(
     (Join-Path $LunarisLibDir "Lunaris.dll"),
-    (Find-HarmonyDll $LunarisLibDir $managed),
     (Join-Path $managed "Assembly-CSharp.dll"),
     (Join-Path $managed "netstandard.dll"),
     (Join-Path $managed "UnityEngine.dll"),
     (Join-Path $managed "UnityEngine.CoreModule.dll"),
-    (Join-Path $managed "UnityEngine.IMGUIModule.dll"),
+    (Join-Path $managed "UnityEngine.UIModule.dll"),
     (Join-Path $managed "UnityEngine.TextRenderingModule.dll"),
     (Join-Path $managed "UnityEngine.InputLegacyModule.dll"),
+    (Join-Path $managed "UnityEngine.IMGUIModule.dll"),
     (Join-Path $managed "UnityEngine.UI.dll"),
     (Join-Path $managed "Unity.TextMeshPro.dll")
 )
@@ -114,3 +107,5 @@ finally {
 
 Write-Host "Installed Erenshor Journal to $out" -ForegroundColor Green
 Write-Host "Use the draggable Journal UI button in game. Your journal data is saved separately under plugins\config\ErenshorJournal." -ForegroundColor Green
+
+
