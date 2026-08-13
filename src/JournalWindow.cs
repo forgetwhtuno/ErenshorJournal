@@ -21,6 +21,18 @@ namespace ErenshorJournal
         private Rect _currentWindowRect;
         private bool _resizing;
         private Vector2 _resizeDelta;
+        private bool _textInputFocused;
+
+        private const string TabNameControl = "ErenshorJournal.TabName";
+        private const string NoteTextControl = "ErenshorJournal.NoteText";
+
+        // True while the tab-name field or the note text area actually has keyboard focus, not
+        // merely while the window is open. Used to suppress native movement/hotkey input only
+        // for as long as the player is actually typing into the journal.
+        internal bool IsTextInputFocused
+        {
+            get { return _textInputFocused; }
+        }
 
         private Texture2D _panelTexture;
         private Texture2D _buttonTexture;
@@ -74,6 +86,12 @@ namespace ErenshorJournal
                 result.width += _resizeDelta.x;
                 result.height += _resizeDelta.y;
             }
+
+            string focused = GUI.GetNameOfFocusedControl();
+            _textInputFocused = !_showChronicle &&
+                (string.Equals(focused, TabNameControl, StringComparison.Ordinal) ||
+                 string.Equals(focused, NoteTextControl, StringComparison.Ordinal));
+
             return result;
         }
 
@@ -99,6 +117,7 @@ namespace ErenshorJournal
             _dangerButtonStyle = null;
             _closeButtonStyle = null;
             _resizeGripStyle = null;
+            _textInputFocused = false;
         }
 
         private void DrawWindowContents(int id)
@@ -174,6 +193,7 @@ namespace ErenshorJournal
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("PAGE", _sectionStyle, GUILayout.Width(38f));
+            GUI.SetNextControlName(TabNameControl);
             string newName = GUILayout.TextField(tab.Name, JournalCore.MaxTabNameLength, _textFieldStyle, GUILayout.MinWidth(130f), GUILayout.Height(24f));
             if (!string.Equals(newName, tab.Name, StringComparison.Ordinal))
             {
@@ -209,6 +229,7 @@ namespace ErenshorJournal
             GUILayout.Space(3f);
 
             string oldText = tab.Text ?? string.Empty;
+            GUI.SetNextControlName(NoteTextControl);
             string newText = GUILayout.TextArea(oldText, _textAreaStyle, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
             if (!string.Equals(oldText, newText, StringComparison.Ordinal))
             {

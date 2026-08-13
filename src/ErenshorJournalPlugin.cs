@@ -2,18 +2,23 @@ using System;
 using System.IO;
 using Lunaris;
 using Lunaris.Config;
+using HarmonyLib;
 using UnityEngine;
 
 namespace ErenshorJournal
 {
     [LunarisPlugin(PluginGuid, PluginVersion, "forgetwhtuno",
         "A small local, freeform player notebook with an optional Chronicle sink for verified events from other mods.")]
-    [LunarisPermission(LunarisPermission.FileAccess)]
+    [LunarisPermission(LunarisPermission.FileAccess | LunarisPermission.Harmony)]
     public sealed class ErenshorJournalPlugin : LunarisPlugin
     {
         internal const string PluginGuid = "forgetwhtuno.erenshor.journal";
         internal const string PluginName = "Erenshor Journal";
-        internal const string PluginVersion = "0.1.2";
+        internal const string PluginVersion = "0.1.3";
+
+        internal static ErenshorJournalPlugin Instance;
+        private Harmony _harmony;
+        private bool _forcedPlayerTyping;
 
         private JournalSettings _settings;
         private JournalConfigEntry<float> _launcherX;
@@ -39,6 +44,7 @@ namespace ErenshorJournal
 
         private void Awake()
         {
+            Instance = this;
             _settings = new JournalSettings();
             Config.Register(ref _settings);
             InitializeConfigEntries();
@@ -53,6 +59,10 @@ namespace ErenshorJournal
             _launcher = new JournalLauncher();
             _windowRect = ResolveInitialRect();
             _launcherRect = ResolveInitialLauncherRect();
+
+            _harmony = new Harmony(PluginGuid);
+            _harmony.PatchAll();
+
             Logging.LogInfo("Erenshor Journal " + PluginVersion + " loaded. Use the draggable Journal UI button to open or close it. Journal does not register a global hotkey. Notes remain local and are never logged or networked.");
         }
 
@@ -92,11 +102,14 @@ namespace ErenshorJournal
         {
             try
             {
+                bool textFocused = false;
                 if (_open && _window != null && _document != null)
                 {
                     _windowRect = ClampRect(_window.Draw(_windowRect, _document, MarkDirty));
+                    textFocused = _window.IsTextInputFocused;
                     if (_window.RequestClose) CloseJournal();
                 }
+                UpdatePlayerTyping(textFocused);
 
                 if (_launcher != null)
                 {
@@ -113,18 +126,49 @@ namespace ErenshorJournal
             }
         }
 
+        // Only ever forces GameData.PlayerTyping on a transition we own, so we never clobber the
+        // native chat box (or another mod) that might independently be setting the same flag.
+        private void UpdatePlayerTyping(bool wantsTyping)
+        {
+            if (wantsTyping && !_forcedPlayerTyping)
+            {
+                GameData.PlayerTyping = true;
+                _forcedPlayerTyping = true;
+            }
+            else if (!wantsTyping && _forcedPlayerTyping)
+            {
+                GameData.PlayerTyping = false;
+                _forcedPlayerTyping = false;
+            }
+        }
+
+        // True while the pointer (already converted to GUI screen-space by the caller) is over
+        // the journal window or its launcher button. The click-passthrough Harmony patches below
+        // use this so a click on the panel cannot also drop the player's world target or spin
+        // the camera.
+        internal bool PointerIsOverUi(Vector2 guiPoint)
+        {
+            if (_open && _windowRect.Contains(guiPoint)) return true;
+            if (_launcherRect.Contains(guiPoint)) return true;
+            return false;
+        }
+
         private void OnDestroy()
         {
+            try { JournalCameraLookPatch.Restore(); } catch { }
             try { SaveNow(); } catch { }
             try { PersistWindowRect(); } catch { }
             try { PersistLauncherRect(); } catch { }
+            try { UpdatePlayerTyping(false); } catch { }
             try { if (_window != null) _window.Dispose(); } catch { }
             try { if (_launcher != null) _launcher.Dispose(); } catch { }
             try { if (_open) RestoreCursor(); } catch { }
+            try { if (_harmony != null) _harmony.UnpatchSelf(); } catch { }
             _window = null;
             _launcher = null;
             _document = null;
             _store = null;
+            if (Instance == this) Instance = null;
         }
 
         private void ToggleJournal()
@@ -254,5 +298,62 @@ namespace ErenshorJournal
                    Mathf.Abs(a.width - b.width) < 0.25f &&
                    Mathf.Abs(a.height - b.height) < 0.25f;
         }
+    }
+
+    // IMGUI doesn't own the raw click Erenshor reads here, so a click on the Journal window or
+    // its launcher would otherwise also affect the world (deselect target, move camera). Same
+    // pattern as Erenshor-PvP's PvpPanelLeftClickPatch / Erenshor Crafting Expanded's
+    // CraftingPanelLeftClickPatch.
+    [HarmonyPatch(typeof(PlayerControl), "LeftClick")]
+    internal static class JournalPanelLeftClickPatch
+    {
+        [HarmonyPrefix]
+        private static bool Prefix()
+        {
+            try
+            {
+                if (ErenshorJournalPlugin.Instance == null) return true;
+                Vector2 mouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                return !ErenshorJournalPlugin.Instance.PointerIsOverUi(mouse);
+            }
+            catch { return true; }
+        }
+    }
+
+    [HarmonyPatch(typeof(csMouseOrbit), "LateUpdate")]
+    internal static class JournalCameraLookPatch
+    {
+        private static csMouseOrbit _muted;
+        private static float _mutedX;
+        private static float _mutedY;
+
+        internal static void Restore()
+        {
+            csMouseOrbit orbit = _muted;
+            _muted = null;
+            if (orbit == null) return;
+            try { orbit.xSpeed = _mutedX; orbit.ySpeed = _mutedY; } catch { }
+        }
+
+        [HarmonyPrefix]
+        private static void Prefix(csMouseOrbit __instance)
+        {
+            Restore();
+            try
+            {
+                if (__instance == null || ErenshorJournalPlugin.Instance == null) return;
+                Vector2 mouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                if (!ErenshorJournalPlugin.Instance.PointerIsOverUi(mouse)) return;
+                _mutedX = __instance.xSpeed;
+                _mutedY = __instance.ySpeed;
+                __instance.xSpeed = 0f;
+                __instance.ySpeed = 0f;
+                _muted = __instance;
+            }
+            catch { }
+        }
+
+        [HarmonyPostfix]
+        private static void Postfix() { Restore(); }
     }
 }
