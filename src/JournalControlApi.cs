@@ -6,10 +6,12 @@ namespace ErenshorJournal
     public sealed class JournalControlState
     {
         public bool GameplayReady;
+        // Retained for API shape compatibility; intentionally never populated with private identity data.
         public string CharacterKey;
         public bool PanelOpen;
         public int TabCount;
         public int ChronicleCount;
+        // Retained for API shape compatibility; intentionally never populated with private note metadata.
         public string SelectedTabName;
         public int SelectedNoteCharacters;
     }
@@ -26,7 +28,6 @@ namespace ErenshorJournal
             state.GameplayReady = SuiteUiPolicy.IsGameplayReady();
             ErenshorJournalPlugin plugin = ErenshorJournalPlugin.Instance;
             if (plugin == null) return state;
-            state.CharacterKey = plugin.ControlCharacterKey;
             state.PanelOpen = plugin.ControlPanelOpen;
             JournalDocument doc = plugin.ControlDocument;
             if (doc == null) return state;
@@ -35,14 +36,14 @@ namespace ErenshorJournal
             if (doc.Tabs != null && doc.SelectedTabIndex >= 0 && doc.SelectedTabIndex < doc.Tabs.Count)
             {
                 JournalTab tab = doc.Tabs[doc.SelectedTabIndex];
-                if (tab != null) { state.SelectedTabName = tab.Name ?? string.Empty; state.SelectedNoteCharacters = tab.Text == null ? 0 : tab.Text.Length; }
+                if (tab != null) state.SelectedNoteCharacters = tab.Text == null ? 0 : tab.Text.Length;
             }
             return state;
         }
         public static string GetStatus()
         {
             JournalControlState s = GetBasicState();
-            return s.GameplayReady ? s.TabCount + " tab(s), " + s.ChronicleCount + " Chronicle entr" + (s.ChronicleCount == 1 ? "y" : "ies") + "." : "Not fully in world.";
+            return s.GameplayReady ? s.TabCount + " tab(s), " + s.ChronicleCount + " Chronicle entr" + (s.ChronicleCount == 1 ? "y" : "ies") + "." : "Waiting for character.";
         }
         public static bool OpenPanel() { var p = ErenshorJournalPlugin.Instance; if (p == null || !SuiteUiPolicy.IsGameplayReady()) return false; p.RequestOpenJournal(); return true; }
         public static bool ClosePanel() { var p = ErenshorJournalPlugin.Instance; if (p == null) return false; p.RequestCloseJournal(); return true; }

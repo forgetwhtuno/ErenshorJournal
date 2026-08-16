@@ -19,9 +19,10 @@ Erenshor Journal owns only:
 1. player-written local notes;
 2. tab organization;
 3. local persistence;
-4. a tiny optional append API for verified Chronicle events.
+4. a tiny optional append API for structured verified Chronicle events;
+5. failure-closed observation of narrowly evidenced optional **level milestones** (not raw XP/gameplay control).
 
-It does not automatically read quests, inventory, Sims, combat, crafting, PvP, guild state, navigation, or COOP state.
+It does not automatically read quests, inventory, Sims, combat, PvP, guild state, navigation, or COOP state. It may observe only the current public Foraging/Crafting **level** fields from Crafting Expanded to detect a meaningful level increase after a per-character baseline; it does not read raw XP or own that progression state.
 
 The Chronicle does not infer that an event happened. A source mod that already verified an event may append a record; that source remains authoritative.
 

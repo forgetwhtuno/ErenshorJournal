@@ -21,6 +21,38 @@ if ($LASTEXITCODE -ne 0) { throw "Journal core tests did not compile." }
 & $out
 if ($LASTEXITCODE -ne 0) { throw "Journal core tests failed." }
 
+# Structured Chronicle API queue behavior. A tiny local plugin-shaped test double lets this stay
+# Unity/Lunaris-free while preserving the production public API source unchanged.
+$apiOut = Join-Path $env:TEMP "ErenshorJournal.ApiTests.exe"
+& $csc /nologo /target:exe /out:$apiOut `
+    (Join-Path $ScriptRoot "src\JournalModels.cs") `
+    (Join-Path $ScriptRoot "src\JournalApi.cs") `
+    (Join-Path $ScriptRoot "tests\JournalApiTests.cs")
+if ($LASTEXITCODE -ne 0) { throw "Journal API tests did not compile." }
+& $apiOut
+if ($LASTEXITCODE -ne 0) { throw "Journal API tests failed." }
+
+# Pure significance policy: first observation is baseline, raw XP changes cannot enter because the
+# tracker accepts levels only, and only a level increase becomes one structured milestone.
+$progressOut = Join-Path $env:TEMP "ErenshorJournal.ProgressionPolicyTests.exe"
+& $csc /nologo /target:exe /out:$progressOut `
+    (Join-Path $ScriptRoot "src\JournalProgressionPolicy.cs") `
+    (Join-Path $ScriptRoot "tests\JournalProgressionPolicyTests.cs")
+if ($LASTEXITCODE -ne 0) { throw "Journal progression policy tests did not compile." }
+& $progressOut
+if ($LASTEXITCODE -ne 0) { throw "Journal progression policy tests failed." }
+
+# Compile the reflection-only optional bridge WITHOUT Crafting Expanded. The test proves absence of
+# the sibling is a normal no-op rather than a load/runtime requirement.
+$optionalProgressOut = Join-Path $env:TEMP "ErenshorJournal.OptionalProgressionBridgeTests.exe"
+& $csc /nologo /target:exe /out:$optionalProgressOut `
+    (Join-Path $ScriptRoot "src\JournalProgressionPolicy.cs") `
+    (Join-Path $ScriptRoot "src\OptionalProgressionBridge.cs") `
+    (Join-Path $ScriptRoot "tests\OptionalProgressionBridgeTests.cs")
+if ($LASTEXITCODE -ne 0) { throw "Optional progression bridge tests did not compile." }
+& $optionalProgressOut
+if ($LASTEXITCODE -ne 0) { throw "Optional progression bridge tests failed." }
+
 # Pure decision logic behind the GameData.PlayerTyping ownership handling - no UnityEngine or
 # game assembly dependency, so this stays testable outside the game. See src/JournalTypingPolicy.cs.
 $typingOut = Join-Path $env:TEMP "ErenshorJournalTypingPolicyTests.exe"
@@ -60,3 +92,113 @@ $suiteUiOut = Join-Path $env:TEMP "ErenshorJournal.SuiteUiPolicyTests.exe"
 if ($LASTEXITCODE -ne 0) { throw "Suite UI policy tests did not compile." }
 & $suiteUiOut
 if ($LASTEXITCODE -ne 0) { throw "Suite UI policy tests failed." }
+
+# Pure fast-entry formatting: clean timestamp markers and separator behavior without Unity.
+$entryOut = Join-Path $env:TEMP "ErenshorJournal.EntryPolicyTests.exe"
+& $csc /nologo /target:exe /out:$entryOut `
+    (Join-Path $ScriptRoot "src\JournalEntryPolicy.cs") `
+    (Join-Path $ScriptRoot "tests\JournalEntryPolicyTests.cs")
+if ($LASTEXITCODE -ne 0) { throw "Journal entry policy tests did not compile." }
+& $entryOut
+if ($LASTEXITCODE -ne 0) { throw "Journal entry policy tests failed." }
+
+# Pure toolbar slot geometry: guards the retained Journal action row against Copy/Delete overlap.
+$layoutOut = Join-Path $env:TEMP "ErenshorJournal.UiLayoutPolicyTests.exe"
+& $csc /nologo /target:exe /out:$layoutOut `
+    (Join-Path $ScriptRoot "src\JournalUiLayoutPolicy.cs") `
+    (Join-Path $ScriptRoot "tests\JournalUiLayoutPolicyTests.cs")
+if ($LASTEXITCODE -ne 0) { throw "Journal UI layout policy tests did not compile." }
+& $layoutOut
+if ($LASTEXITCODE -ne 0) { throw "Journal UI layout policy tests failed." }
+
+# Privacy/authority source guard: normal runtime logging must not interpolate character keys or
+# exception messages that can contain local filesystem paths, and Journal stays network-free.
+$journalPluginSource = Get-Content (Join-Path $ScriptRoot "src\ErenshorJournalPlugin.cs") -Raw
+$journalAllSource = (Get-ChildItem (Join-Path $ScriptRoot "src") -Filter "*.cs" | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
+if ($journalPluginSource -match 'Logging\.Log\w+\([^\r\n]*\+\s*key\b') { throw "Journal privacy guard failed: character key is included in a log call." }
+if ($journalPluginSource -match 'Logging\.Log\w+\([^\r\n]*ex\.Message') { throw "Journal privacy guard failed: exception message may expose local paths." }
+if ($journalAllSource -match 'LunarisPermission\.Network') { throw "Journal privacy guard failed: Journal requests network permission." }
+if ($journalPluginSource -notmatch 'Instance\s*!=\s*null\s*&&\s*Instance\s*!=\s*this') { throw "Journal lifecycle guard failed: duplicate plugin initialization is not rejected." }
+$readyTransitionMatch = [regex]::Match($journalPluginSource, 'private\s+bool\s+RefreshReadyState\(\)[\s\S]*?(?=private\s+void\s+EnsureCharacterContext)')
+if (-not $readyTransitionMatch.Success -or $readyTransitionMatch.Value -notmatch 'else\s+if\s*\(_dirty\)\s*SaveNow\(\)') { throw "Journal lifecycle guard failed: dirty state is not saved on character unload when the panel is closed." }
+Write-Host "PASS: Journal privacy/network source guard"
+
+# Deep playable-state source guards: the local control surface must not expose character/tab
+# identity, integration work is frame-bounded, and durable/backup recovery paths remain present.
+$journalControlSource = Get-Content (Join-Path $ScriptRoot "src\JournalControlApi.cs") -Raw
+$journalStoreSource = Get-Content (Join-Path $ScriptRoot "src\JournalStore.cs") -Raw
+if ($journalControlSource -match 'state\.CharacterKey\s*=') { throw "Journal privacy guard failed: control state exposes character key." }
+if ($journalControlSource -match 'state\.SelectedTabName\s*=') { throw "Journal privacy guard failed: control state exposes tab name." }
+if ($journalPluginSource -notmatch 'MaximumChronicleIntegrationsPerFrame\s*=\s*32') { throw "Journal integration guard failed: per-frame Chronicle admission is not bounded." }
+$legacyMigrationSource = Get-Content (Join-Path $ScriptRoot "src\JournalLegacyMigration.cs") -Raw
+if ($legacyMigrationSource -notmatch 'FileMode\.CreateNew' -or $legacyMigrationSource -notmatch 'stream\.Flush\(true\)') { throw "Journal migration guard failed: legacy claim is not acquired durably before character copy." }
+$claimAt = $legacyMigrationSource.IndexOf('FileMode.CreateNew')
+$copyAt = $legacyMigrationSource.IndexOf('File.Copy(legacyPath, characterPath')
+if ($claimAt -lt 0 -or $copyAt -lt 0 -or $claimAt -ge $copyAt) { throw "Journal migration guard failed: private legacy notes are copied before the one-time claim is acquired." }
+if ($journalStoreSource -notmatch 'stream\.Flush\(true\)') { throw "Journal persistence guard failed: temporary file is not durably flushed before replacement." }
+if ($journalStoreSource -notmatch 'TryLoadFile\(temp') { throw "Journal persistence guard failed: readable interrupted-save temporary files are not recoverable." }
+if ($journalStoreSource -notmatch 'IsAtLeastAsNew\(temp, _path\)') { throw "Journal persistence guard failed: newer complete temp cannot recover a pre-replace crash over an older readable main." }
+if ($journalStoreSource -notmatch 'TryLoadNewestRecovery' -or $journalStoreSource -notmatch 'IsAtLeastAsNew\(temp, backup\)') { throw "Journal persistence guard failed: recovery does not choose the newest validated backup/temp candidate." }
+if ($journalStoreSource -notmatch 'File\.Replace\(temp, _path, backup, true\)') { throw "Journal persistence guard failed: atomic replace/backup path missing." }
+# Automated-history routing guard: the timestamp helper remains manual-only, structured Chronicle
+# APIs never mutate Tabs/Text, and optional progression reads LEVEL state only (never XP ticks).
+$journalApiSource = Get-Content (Join-Path $ScriptRoot "src\JournalApi.cs") -Raw
+$journalWindowSource = Get-Content (Join-Path $ScriptRoot "src\JournalWindow.cs") -Raw
+$progressPolicySource = Get-Content (Join-Path $ScriptRoot "src\JournalProgressionPolicy.cs") -Raw
+$optionalProgressSource = Get-Content (Join-Path $ScriptRoot "src\OptionalProgressionBridge.cs") -Raw
+$retainedUiSource = Get-Content (Join-Path $ScriptRoot "src\RetainedUiKit.cs") -Raw
+$modelsSource = Get-Content (Join-Path $ScriptRoot "src\JournalModels.cs") -Raw
+if ($journalApiSource -match '\.Tabs\s*\[' -or $journalApiSource -match 'JournalTab') { throw "Journal routing guard failed: public Chronicle API can reach manual note/tab state." }
+if ($optionalProgressSource -match '\.Tabs\s*\[' -or $optionalProgressSource -match 'AppendTimestampMarker') { throw "Journal routing guard failed: optional progression can reach manual note text." }
+$timestampReferences = [regex]::Matches($journalAllSource, 'AppendTimestampMarker').Count
+if ($timestampReferences -ne 2) { throw "Journal routing guard failed: timestamp helper is referenced outside its declaration and the manual JournalWindow action." }
+if ($journalWindowSource -notmatch 'AddFixedButton\(row,\s*"NewEntry",\s*"Add Time"') { throw "Journal workflow guard failed: ambiguous manual New Entry label returned." }
+if ($progressPolicySource -match 'CurrentXp|SmithingXp|XpAward') { throw "Journal significance guard failed: progression policy depends on raw XP state." }
+if ($optionalProgressSource -match 'CurrentXp|SmithingXp|XpAward') { throw "Journal significance guard failed: optional progression observer reads raw XP." }
+if ($modelsSource -notmatch 'AppendChronicleEvent' -or $modelsSource -notmatch 'EventId') { throw "Journal Chronicle guard failed: structured stable-id admission is missing." }
+if ($journalApiSource -notmatch 'public const int ContractVersion\s*=\s*1' -or $journalApiSource -notmatch 'public const int EventContractVersion\s*=\s*2') { throw "Journal compatibility guard failed: legacy/v2 API version surfaces changed unexpectedly." }
+
+# Journal-owned pointer containment must claim native UI-drag ownership on pointer-down, before the
+# EventSystem drag threshold, and release it on pointer-up/disable/destroy paths.
+$dragClass = [regex]::Match($retainedUiSource, 'internal sealed class SuiteDragHandler[\s\S]*?(?=internal sealed class SuiteResizeHandler)')
+$resizeClass = [regex]::Match($retainedUiSource, 'internal sealed class SuiteResizeHandler[\s\S]*?(?=internal sealed class|\z)')
+if (-not $dragClass.Success -or $dragClass.Value -notmatch 'OnPointerDown[\s\S]*?_gesture\.Press\(\)[\s\S]*?ClaimOwnership\(\)') { throw "Journal input guard failed: window/launcher drag does not claim ownership on pointer-down." }
+if ($dragClass.Value -notmatch 'OnPointerUp[\s\S]*?EndDrag' -or $dragClass.Value -notmatch 'OnDisable[\s\S]*?EndDrag' -or $dragClass.Value -notmatch 'OnDestroy[\s\S]*?EndDrag' -or $dragClass.Value -notmatch 'private\s+void\s+EndDrag[\s\S]*?Release\(\)') { throw "Journal input guard failed: drag ownership cleanup path is incomplete." }
+if (-not $resizeClass.Success -or $resizeClass.Value -notmatch 'OnPointerDown[\s\S]*?_gesture\.Press\(\)[\s\S]*?ClaimOwnership\(\)' -or $resizeClass.Value -notmatch 'OnPointerUp[\s\S]*?EndResize' -or $resizeClass.Value -notmatch 'OnDisable[\s\S]*?EndResize' -or $resizeClass.Value -notmatch 'OnDestroy[\s\S]*?EndResize') { throw "Journal input guard failed: resize ownership claim/cleanup path is incomplete." }
+if ($journalPluginSource -notmatch 'CloseJournal\(\)[\s\S]*?UpdatePlayerTyping\(false\)') { throw "Journal typing guard failed: closing the panel does not release Journal typing ownership immediately." }
+Write-Host "PASS: Journal deep persistence/privacy/history/input source guard"
+
+# RC camera/gesture source contract. Runtime IL proof still executes fail-closed at Harmony prepare
+# time; these checks prevent regressions back to global-flag-only or non-left gestures.
+$cameraSource = Get-Content (Join-Path $ScriptRoot "src\JournalCameraUiPatch.cs") -Raw
+$ownershipSource = Get-Content (Join-Path $ScriptRoot "src\JournalUiGestureOwnership.cs") -Raw
+$retainedSource = Get-Content (Join-Path $ScriptRoot "src\RetainedUiKit.cs") -Raw
+$pluginSource = Get-Content (Join-Path $ScriptRoot "src\ErenshorJournalPlugin.cs") -Raw
+if ($cameraSource -notmatch '\[HarmonyPatch\(typeof\(CameraController\),\s*"UsingUI"\)\]' -or
+    $cameraSource -notmatch '\[HarmonyPrepare\]' -or $cameraSource -notmatch 'if\s*\(!__result\s*&&\s*JournalUiGestureOwnership\.OwnsPointerGesture\)') {
+    throw "Journal camera guard failed: fail-closed monotonic UsingUI postfix missing."
+}
+foreach ($token in @('UIWindows','activeSelf','ModernControls','releaseMouse','GetAxis','DraggingUIElement')) {
+    if ($cameraSource -notmatch [regex]::Escape($token)) { throw "Journal camera guard failed: native proof token missing: $token" }
+}
+if ($retainedSource -notmatch 'InputButton\.Left' -or $retainedSource -notmatch 'Input\.GetMouseButton\(0\)' -or
+    $retainedSource -notmatch 'OnApplicationFocus' -or $retainedSource -notmatch 'OnApplicationPause') {
+    throw "Journal gesture guard failed: left-only physical/focus/pause lifecycle missing."
+}
+if ($ownershipSource -notmatch 'ProcessOwnersKey' -or $ownershipSource -notmatch 'RestoreBaseline' -or
+    $ownershipSource -match 'DraggingUIElement\s*=\s*false') {
+    throw "Journal ownership guard failed: shared baseline restoration regressed."
+}
+if ($pluginSource -notmatch 'PluginVersion\s*=\s*"0\.1\.7"' -or $pluginSource -notmatch '_harmony\.PatchAll\(\)' -or
+    $pluginSource -notmatch '_harmony\.UnpatchSelf\(\)') {
+    throw "Journal camera lifecycle/version guard failed."
+}
+Write-Host "Journal RC camera/gesture source guards: PASS" -ForegroundColor Green
+
+# Release polish source contract: header collapse uses the owned Image-chevron, never a TMP
+# triangle glyph. Existing SuiteWindowChromePolicy tests cover the immediate body/height restore.
+if ($journalWindowSource -notmatch 'AddVerticalChevron\(_collapseChevron,\s*!_collapsed\)' -or
+    $retainedUiSource -notmatch 'internal\s+static\s+void\s+AddVerticalChevron') {
+    throw "Journal release polish guard failed: glyph-safe collapse chevron is missing."
+}
+Write-Host "Journal release polish collapse-icon guard: PASS" -ForegroundColor Green

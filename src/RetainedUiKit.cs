@@ -9,16 +9,18 @@ namespace ErenshorJournal
 {
     internal static class RetainedUiKit
     {
-        internal static readonly Color Panel = new Color(0.015f, 0.09f, 0.125f, 0.96f);
-        internal static readonly Color Header = new Color(0.025f, 0.14f, 0.18f, 0.98f);
-        internal static readonly Color Button = new Color(0.035f, 0.19f, 0.24f, 0.98f);
-        internal static readonly Color ButtonHover = new Color(0.08f, 0.32f, 0.39f, 1f);
-        internal static readonly Color Selected = new Color(0.06f, 0.28f, 0.34f, 1f);
-        internal static readonly Color Danger = new Color(0.30f, 0.17f, 0.08f, 0.98f);
-        internal static readonly Color TextBack = new Color(0.012f, 0.05f, 0.065f, 0.98f);
-        internal static readonly Color Edge = new Color(0.03f, 0.67f, 0.86f, 0.96f);
-        internal static readonly Color Text = new Color(0.90f, 0.96f, 0.98f, 1f);
-        internal static readonly Color Muted = new Color(0.62f, 0.76f, 0.80f, 1f);
+        // Local mechanical copy of the canonical Suite / Sim Actions visual tokens.
+        // These mods remain independently loadable; sharing colors must not create a Hub dependency.
+        internal static readonly Color Panel = new Color(0.015f, 0.09f, 0.125f, 0.72f);
+        internal static readonly Color Header = new Color(0.025f, 0.13f, 0.17f, 0.88f);
+        internal static readonly Color Button = new Color(0.035f, 0.17f, 0.22f, 0.78f);
+        internal static readonly Color ButtonHover = new Color(0.12f, 0.38f, 0.48f, 0.90f);
+        internal static readonly Color Selected = new Color(0.07f, 0.28f, 0.34f, 0.94f);
+        internal static readonly Color Danger = new Color(0.30f, 0.15f, 0.08f, 0.88f);
+        internal static readonly Color TextBack = new Color(0.012f, 0.05f, 0.065f, 0.90f);
+        internal static readonly Color Edge = new Color(0.03f, 0.67f, 0.86f, 0.95f);
+        internal static readonly Color Text = new Color(0.88f, 0.92f, 0.91f, 1f);
+        internal static readonly Color Muted = new Color(0.56f, 0.78f, 0.88f, 1f);
 
         internal static GameObject CreateCanvas(string name, int sortingOrder)
         {
@@ -67,6 +69,49 @@ namespace ErenshorJournal
             rect.sizeDelta = new Vector2(width, height);
         }
 
+        internal static bool FitToScreen(RectTransform rect, float margin)
+        {
+            if (rect == null) return false;
+            float safeMargin = Mathf.Max(0f, margin);
+            float maxWidth = Mathf.Max(1f, Screen.width - (safeMargin * 2f));
+            float maxHeight = Mathf.Max(1f, Screen.height - (safeMargin * 2f));
+            float width = Mathf.Min(rect.rect.width, maxWidth);
+            float height = Mathf.Min(rect.rect.height, maxHeight);
+            bool changed = Math.Abs(width - rect.rect.width) > 0.1f || Math.Abs(height - rect.rect.height) > 0.1f;
+            if (!changed) return false;
+            rect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, width);
+            rect.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, height);
+            return true;
+        }
+
+
+        internal static void AddFrame(RectTransform parent, float thickness)
+        {
+            if (parent == null) return;
+            float t = Mathf.Max(1f, thickness);
+            AddFrameEdge("FrameTop", parent, new Vector2(0f, 1f), new Vector2(1f, 1f),
+                new Vector2(0f, -t), new Vector2(0f, 0f));
+            AddFrameEdge("FrameBottom", parent, new Vector2(0f, 0f), new Vector2(1f, 0f),
+                new Vector2(0f, 0f), new Vector2(0f, t));
+            AddFrameEdge("FrameLeft", parent, new Vector2(0f, 0f), new Vector2(0f, 1f),
+                new Vector2(0f, 0f), new Vector2(t, 0f));
+            AddFrameEdge("FrameRight", parent, new Vector2(1f, 0f), new Vector2(1f, 1f),
+                new Vector2(-t, 0f), new Vector2(0f, 0f));
+        }
+
+        private static void AddFrameEdge(string name, RectTransform parent, Vector2 anchorMin, Vector2 anchorMax,
+            Vector2 offsetMin, Vector2 offsetMax)
+        {
+            RectTransform edge = CreateRect(name, parent);
+            edge.anchorMin = anchorMin;
+            edge.anchorMax = anchorMax;
+            edge.pivot = new Vector2(0.5f, 0.5f);
+            edge.offsetMin = offsetMin;
+            edge.offsetMax = offsetMax;
+            Image image = AddImage(edge, Edge);
+            image.raycastTarget = false;
+        }
+
         internal static void AnchorTopStretch(RectTransform rect, float left, float top, float right, float height)
         {
             rect.anchorMin = new Vector2(0f, 1f);
@@ -111,6 +156,26 @@ namespace ErenshorJournal
             TextMeshProUGUI text = AddLabel("Label", rect, label, 11f, FontStyles.Normal, TextAlignmentOptions.Center);
             Stretch(text.rectTransform, 4f, 1f, 4f, 1f);
             return button;
+        }
+
+        // Header disclosure icons use Images rather than TMP triangle glyphs, whose coverage is
+        // not guaranteed by the game's active font asset.
+        internal static void AddVerticalChevron(RectTransform parent, bool pointsUp)
+        {
+            if (parent == null) return;
+            RectTransform icon = CreateRect("Chevron", parent);
+            icon.anchorMin = icon.anchorMax = new Vector2(0.5f, 0.5f);
+            icon.pivot = new Vector2(0.5f, 0.5f); icon.sizeDelta = new Vector2(12f, 10f);
+            AddChevronBar(icon, new Vector2(-2.2f, pointsUp ? -1f : 1f), pointsUp ? -45f : 45f);
+            AddChevronBar(icon, new Vector2(2.2f, pointsUp ? -1f : 1f), pointsUp ? 45f : -45f);
+        }
+
+        private static void AddChevronBar(RectTransform parent, Vector2 position, float rotation)
+        {
+            RectTransform bar = CreateRect("ChevronBar", parent); Image image = AddImage(bar, Edge);
+            image.raycastTarget = false; bar.anchorMin = bar.anchorMax = new Vector2(0.5f, 0.5f);
+            bar.pivot = new Vector2(0.5f, 0.5f); bar.sizeDelta = new Vector2(2f, 7f);
+            bar.anchoredPosition = position; bar.localRotation = Quaternion.Euler(0f, 0f, rotation);
         }
 
         internal static RectTransform AddHorizontalRow(string name, Transform parent, float height, float spacing)
@@ -216,13 +281,14 @@ namespace ErenshorJournal
             return input;
         }
 
-        internal static SuiteDragHandler AddDragSurface(string name, Transform parent, RectTransform target, float rightExclusion, Action onCompleted)
+        internal static SuiteDragHandler AddDragSurface(string name, Transform parent, RectTransform target,
+            float leftExclusion, float rightExclusion, Action onCompleted)
         {
             RectTransform rect = CreateRect(name, parent);
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.offsetMin = Vector2.zero;
+            rect.offsetMin = new Vector2(Mathf.Max(0f, leftExclusion), 0f);
             rect.offsetMax = new Vector2(-Mathf.Max(0f, rightExclusion), 0f);
             Image hit = AddImage(rect, Color.clear);
             hit.raycastTarget = true;
@@ -285,10 +351,18 @@ namespace ErenshorJournal
         private readonly SuiteUiGestureState _gesture = new SuiteUiGestureState();
         private bool _owning;
 
-        public void OnPointerDown(PointerEventData eventData) { }
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            if (eventData == null || eventData.button != PointerEventData.InputButton.Left) return;
+            // Claim native UI-drag ownership on pointer-down, before Unity's drag threshold is met.
+            // Otherwise Erenshor can consume the first mouse delta as camera movement.
+            _gesture.Press();
+            ClaimOwnership();
+        }
 
         public void OnBeginDrag(PointerEventData eventData)
         {
+            if (eventData == null || eventData.button != PointerEventData.InputButton.Left) return;
             try
             {
                 if (Target == null) Target = GetComponent<RectTransform>();
@@ -300,12 +374,7 @@ namespace ErenshorJournal
                 _startPointer = local;
                 _startPosition = Target.anchoredPosition;
                 _gesture.Begin();
-                if (!_owning)
-                {
-                    _owning = true;
-                    _owners.Add(this);
-                }
-                GameData.DraggingUIElement = true;
+                ClaimOwnership();
             }
             catch (Exception)
             {
@@ -315,9 +384,10 @@ namespace ErenshorJournal
 
         public void OnDrag(PointerEventData eventData)
         {
-            if (!_gesture.IsActive || Target == null || _parentRect == null) return;
+            if (eventData == null || eventData.button != PointerEventData.InputButton.Left || !_gesture.IsActive || Target == null || _parentRect == null) return;
             try
             {
+                JournalUiGestureOwnership.Reassert();
                 Vector2 local;
                 if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_parentRect, eventData.position, eventData.pressEventCamera, out local)) return;
                 Vector2 next = _startPosition + (local - _startPointer);
@@ -333,10 +403,18 @@ namespace ErenshorJournal
             }
         }
 
-        public void OnEndDrag(PointerEventData eventData) { EndDrag(true); }
-        public void OnPointerUp(PointerEventData eventData) { EndDrag(false); }
-        private void OnDisable() { EndDrag(true); }
-        private void OnDestroy() { EndDrag(true); }
+        public void OnEndDrag(PointerEventData eventData) { if (eventData == null || eventData.button == PointerEventData.InputButton.Left) EndDrag(true); }
+        public void OnPointerUp(PointerEventData eventData) { if (eventData == null || eventData.button == PointerEventData.InputButton.Left) EndDrag(true); }
+        private void Update()
+        {
+            if (!_owning) return;
+            JournalUiGestureOwnership.Reassert();
+            try { if (!Input.GetMouseButton(0)) EndDrag(_gesture.IsActive); } catch (Exception) { EndDrag(false); }
+        }
+        private void OnApplicationFocus(bool focused) { if (!focused) EndDrag(false); }
+        private void OnApplicationPause(bool paused) { if (paused) EndDrag(false); }
+        private void OnDisable() { EndDrag(false); }
+        private void OnDestroy() { EndDrag(false); }
 
         private void EndDrag(bool notify)
         {
@@ -348,15 +426,23 @@ namespace ErenshorJournal
             }
         }
 
+        private void ClaimOwnership()
+        {
+            if (!_owning)
+            {
+                _owning = true;
+                _owners.Add(this);
+                JournalUiGestureOwnership.Acquire(this);
+            }
+            JournalUiGestureOwnership.Reassert();
+        }
+
         private void Release()
         {
             if (!_owning) return;
             _owning = false;
             _owners.Remove(this);
-            if (_owners.Count == 0 && !SuiteResizeHandler.HasOwners)
-            {
-                try { GameData.DraggingUIElement = false; } catch (Exception) { }
-            }
+            JournalUiGestureOwnership.Release(this);
         }
 
         internal static void ForceReleaseIfOwned()
@@ -377,10 +463,7 @@ namespace ErenshorJournal
                 _owners.Clear();
             }
             SuiteResizeHandler.ForceReleaseIfOwned();
-            if (ownedByThisMod)
-            {
-                try { GameData.DraggingUIElement = false; } catch (Exception) { }
-            }
+            if (ownedByThisMod) JournalUiGestureOwnership.ForceRelease();
         }
     }
 
@@ -399,10 +482,16 @@ namespace ErenshorJournal
         private readonly SuiteUiGestureState _gesture = new SuiteUiGestureState();
         private bool _owning;
 
-        public void OnPointerDown(PointerEventData eventData) { }
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            if (eventData == null || eventData.button != PointerEventData.InputButton.Left) return;
+            _gesture.Press();
+            ClaimOwnership();
+        }
 
         public void OnBeginDrag(PointerEventData eventData)
         {
+            if (eventData == null || eventData.button != PointerEventData.InputButton.Left) return;
             try
             {
                 if (Target == null) return;
@@ -413,12 +502,7 @@ namespace ErenshorJournal
                 _startPointer = local;
                 _startSize = Target.rect.size;
                 _gesture.Begin();
-                if (!_owning)
-                {
-                    _owning = true;
-                    _owners.Add(this);
-                }
-                GameData.DraggingUIElement = true;
+                ClaimOwnership();
             }
             catch (Exception)
             {
@@ -428,9 +512,10 @@ namespace ErenshorJournal
 
         public void OnDrag(PointerEventData eventData)
         {
-            if (!_gesture.IsActive || Target == null || _parentRect == null) return;
+            if (eventData == null || eventData.button != PointerEventData.InputButton.Left || !_gesture.IsActive || Target == null || _parentRect == null) return;
             try
             {
+                JournalUiGestureOwnership.Reassert();
                 Vector2 local;
                 if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_parentRect, eventData.position, eventData.pressEventCamera, out local)) return;
                 Vector2 delta = local - _startPointer;
@@ -450,10 +535,18 @@ namespace ErenshorJournal
             }
         }
 
-        public void OnEndDrag(PointerEventData eventData) { EndResize(true); }
-        public void OnPointerUp(PointerEventData eventData) { EndResize(false); }
-        private void OnDisable() { EndResize(true); }
-        private void OnDestroy() { EndResize(true); }
+        public void OnEndDrag(PointerEventData eventData) { if (eventData == null || eventData.button == PointerEventData.InputButton.Left) EndResize(true); }
+        public void OnPointerUp(PointerEventData eventData) { if (eventData == null || eventData.button == PointerEventData.InputButton.Left) EndResize(true); }
+        private void Update()
+        {
+            if (!_owning) return;
+            JournalUiGestureOwnership.Reassert();
+            try { if (!Input.GetMouseButton(0)) EndResize(_gesture.IsActive); } catch (Exception) { EndResize(false); }
+        }
+        private void OnApplicationFocus(bool focused) { if (!focused) EndResize(false); }
+        private void OnApplicationPause(bool paused) { if (paused) EndResize(false); }
+        private void OnDisable() { EndResize(false); }
+        private void OnDestroy() { EndResize(false); }
 
         private void EndResize(bool notify)
         {
@@ -469,15 +562,23 @@ namespace ErenshorJournal
             }
         }
 
+        private void ClaimOwnership()
+        {
+            if (!_owning)
+            {
+                _owning = true;
+                _owners.Add(this);
+                JournalUiGestureOwnership.Acquire(this);
+            }
+            JournalUiGestureOwnership.Reassert();
+        }
+
         private void Release()
         {
             if (!_owning) return;
             _owning = false;
             _owners.Remove(this);
-            if (_owners.Count == 0 && !SuiteDragHandler.HasOwners)
-            {
-                try { GameData.DraggingUIElement = false; } catch (Exception) { }
-            }
+            JournalUiGestureOwnership.Release(this);
         }
 
         internal static void ForceReleaseIfOwned()
