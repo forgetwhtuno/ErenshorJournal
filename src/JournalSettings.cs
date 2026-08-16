@@ -33,7 +33,7 @@ namespace ErenshorJournal
         [Config("LauncherY", "UI", "Saved launcher vertical position, normalized 0..1. Invalid/legacy pixel values recover to the safe default.")]
         public float LauncherY = -1f;
 
-        [Config("ShowStandaloneLauncherWithHub", "UI", "Show Journal launcher while a usable Suite Hub bridge is present. If Hub or this module bridge is unavailable, the standalone launcher is forced visible for recovery.")]
+        [Config("ShowStandaloneLauncherWithHub", "UI", "Show Journal Launcher while a usable Suite Hub bridge is present. If Hub or this module bridge is unavailable, the standalone launcher is forced visible for recovery.")]
         public bool ShowStandaloneLauncherWithHub = false;
 
         [Config("WindowX", "UI", "Saved Journal window horizontal position, normalized 0..1. Invalid/legacy pixel values recover to the safe default.")]

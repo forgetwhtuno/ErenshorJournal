@@ -12,6 +12,7 @@ namespace ErenshorJournal
         private const string Prefix = "forgetwhtuno.erenshor.suite.journal.v1.";
         private IAuraProvider<string> _describe;
         private IAuraProvider<string> _basicSettings;
+        private IAuraProvider<string> _uiState;
         private IAuraProvider<string, string, string> _settingSet;
         private IAuraProvider<string, string, string> _action;
 
@@ -24,6 +25,8 @@ namespace ErenshorJournal
             _describe.RegisterFunc(Describe);
             _basicSettings = owner.IPCAuraProvider<string>(Prefix + "settings.basic");
             _basicSettings.RegisterFunc(BasicSettings);
+            _uiState = owner.IPCAuraProvider<string>(Prefix + "ui.state");
+            _uiState.RegisterFunc(UiState);
             _settingSet = owner.IPCAuraProvider<string, string, string>(Prefix + "setting.set");
             _settingSet.RegisterFunc(SetSetting);
             _action = owner.IPCAuraProvider<string, string, string>(Prefix + "action");
@@ -35,6 +38,7 @@ namespace ErenshorJournal
         {
             SafeUnregister(_describe); _describe = null;
             SafeUnregister(_basicSettings); _basicSettings = null;
+            SafeUnregister(_uiState); _uiState = null;
             SafeUnregister(_settingSet); _settingSet = null;
             SafeUnregister(_action); _action = null;
             Registered = false;
@@ -57,10 +61,19 @@ namespace ErenshorJournal
                 + "&actions=openPanel,closePanel,resetPanel,resetLauncher";
         }
 
+        private string UiState()
+        {
+            ErenshorJournalPlugin p = ErenshorJournalPlugin.Instance;
+            return SuiteUiStatePolicy.Build(JournalControlApi.ModuleId,
+                p != null && p.ControlPanelOpen,
+                JournalWindow.CanvasSortOrder,
+                p == null ? 0d : p.ControlPanelActivatedAt);
+        }
+
         private string BasicSettings()
         {
             StringBuilder sb = new StringBuilder();
-            AppendBool(sb, "showLauncher", "Show Journal launcher", JournalControlApi.GetShowLauncher());
+            AppendBool(sb, "showLauncher", "Show Journal Launcher", JournalControlApi.GetShowLauncher());
             return sb.ToString();
         }
 
@@ -92,6 +105,5 @@ namespace ErenshorJournal
             sb.Append("&tier=basic&type=bool&value=").Append(value ? "true" : "false");
             sb.Append("&mutable=true");
         }
-
     }
 }

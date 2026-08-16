@@ -18,6 +18,7 @@ internal static class JournalLegacyMigrationTests
         Run("legacy source file is never deleted or truncated by a claim", TestClaimNeverTouchesLegacySource);
         Run("second character never inherits legacy data once claimed", TestSecondCharacterStartsEmptyAfterClaim);
         Run("claim is a no-op when already claimed (idempotent)", TestClaimIsNoOpWhenAlreadyClaimed);
+        Run("an interrupted claim marker blocks later characters", TestInterruptedClaimFailsClosed);
         Console.WriteLine("PASS: " + _passed + " tests");
     }
 
@@ -100,6 +101,24 @@ internal static class JournalLegacyMigrationTests
 
             Assert(File.Exists(firstCharacterPath), "first character should have claimed the legacy data");
             Assert(!File.Exists(secondCharacterPath), "second character must start fresh, never inheriting the same legacy notes");
+        });
+    }
+
+    private static void TestInterruptedClaimFailsClosed()
+    {
+        WithTempRoot(delegate(string root)
+        {
+            string legacyPath = Path.Combine(root, "journal.dat");
+            string markerPath = Path.Combine(root, "journal.dat.claimed");
+            string laterCharacterPath = Path.Combine(root, "Characters", "later", "journal.dat");
+            File.WriteAllText(legacyPath, "PRIVATE-LEGACY-CONTENT");
+            // Models a process dying after the durable claim transaction but before the copy.
+            File.WriteAllText(markerPath, "interrupted-claim");
+
+            JournalLegacyMigration.ClaimIfEligible(legacyPath, laterCharacterPath, markerPath);
+
+            Assert(!File.Exists(laterCharacterPath), "a later character must not inherit notes after an interrupted claim");
+            Assert(File.ReadAllText(legacyPath) == "PRIVATE-LEGACY-CONTENT", "legacy source remains available for manual recovery");
         });
     }
 

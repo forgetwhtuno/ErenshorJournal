@@ -16,6 +16,7 @@ internal static class JournalCharacterKeyTests
         Run("safe key is bounded to 48 characters", TestSafeKeyBounded);
         Run("safe key falls back to 'player' for empty input", TestSafeKeyFallback);
         Run("same name different slots produce different keys", TestDifferentSlotsDifferentKeys);
+        Run("same slot reused by a different character name stays isolated", TestSameSlotDifferentName);
         Run("same name and slot are stable across calls", TestStableAcrossCalls);
         Console.WriteLine("PASS: " + _passed + " tests");
     }
@@ -63,6 +64,13 @@ internal static class JournalCharacterKeyTests
         string a = JournalCharacterKey.Compose("Bram", 0);
         string b = JournalCharacterKey.Compose("Bram", 1);
         Assert(a != b, "same name in different slots must produce different keys");
+    }
+
+    private static void TestSameSlotDifferentName()
+    {
+        string oldCharacter = JournalCharacterKey.Compose("Bram", 2);
+        string newCharacter = JournalCharacterKey.Compose("Tamsin", 2);
+        Assert(oldCharacter != newCharacter, "slot reuse with a different character name must not reuse the same journal key");
     }
 
     private static void TestStableAcrossCalls()

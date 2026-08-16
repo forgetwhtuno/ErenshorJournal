@@ -2,22 +2,27 @@ using System;
 using System.IO;
 using Lunaris;
 using Lunaris.Config;
+using HarmonyLib;
 using UnityEngine;
 
 namespace ErenshorJournal
 {
     [LunarisPlugin(PluginGuid, PluginVersion, "forgetwhtuno",
         "A small local, freeform player notebook with an optional Chronicle sink for verified events from other mods.")]
-    [LunarisPermission(LunarisPermission.FileAccess)]
+    [LunarisPermission(LunarisPermission.FileAccess | LunarisPermission.Harmony | LunarisPermission.Reflection)]
     public sealed class ErenshorJournalPlugin : LunarisPlugin
     {
         internal const string PluginGuid = "forgetwhtuno.erenshor.journal";
         internal const string PluginName = "Erenshor Journal";
-        internal const string PluginVersion = "0.1.3";
+        internal const string PluginVersion = "0.1.7";
+        private const int MaximumChronicleIntegrationsPerFrame = 32;
 
         internal static ErenshorJournalPlugin Instance;
+        private bool _initialized;
         private bool _forcedPlayerTyping;
         private JournalSuiteAuraProvider _auraProvider;
+        private OptionalProgressionBridge _progressionBridge;
+        private Harmony _harmony;
 
         private JournalSettings _settings;
         private JournalConfigEntry<float> _launcherX;
@@ -34,6 +39,7 @@ namespace ErenshorJournal
         private JournalWindow _window;
         private JournalLauncher _launcher;
         private bool _open;
+        private double _panelActivatedAt;
         private bool _dirty;
         private float _saveAfter;
         private bool _pendingExternalOpen;
@@ -58,10 +64,18 @@ namespace ErenshorJournal
 
         private void Awake()
         {
+            if (Instance != null && Instance != this)
+            {
+                try { Logging.LogWarning("Erenshor Journal duplicate plugin instance ignored."); } catch { }
+                enabled = false;
+                return;
+            }
             Instance = this;
+            _initialized = true;
             _settings = new JournalSettings();
             Config.Register(ref _settings);
             InitializeConfigEntries();
+            SuiteUiPolicy.InitializeHubPresence(this);
 
             // Deliberately does NOT load any journal data here. Journal data is per-character (see
             // EnsureCharacterContext) and must not be touched until a real local character exists;
@@ -69,12 +83,20 @@ namespace ErenshorJournal
             // or character-select).
             _window = new JournalWindow();
             _launcher = new JournalLauncher();
+            _progressionBridge = new OptionalProgressionBridge();
             InitializeRetainedUi();
 
-            try { _auraProvider = new JournalSuiteAuraProvider(this); }
-            catch (Exception ex) { Logging.LogWarning("[Journal] Suite Aura provider failed to register: " + ex.Message); }
+            _harmony = new Harmony(PluginGuid);
+            try { _harmony.PatchAll(); }
+            catch (Exception ex)
+            {
+                Logging.LogError("Erenshor Journal camera compatibility patch failed (" + ex.GetType().Name + ").");
+            }
 
-            Logging.LogInfo("Erenshor Journal " + PluginVersion + " loaded. The draggable Journal UI button appears once a character is loaded into the world. Journal does not register a global hotkey. Notes remain local, per character, and are never logged or networked.");
+            try { _auraProvider = new JournalSuiteAuraProvider(this); }
+            catch (Exception ex) { Logging.LogWarning("[Journal] Suite Aura provider failed to register (" + ex.GetType().Name + ")."); }
+
+            Logging.LogInfo("Erenshor Journal " + PluginVersion + " loaded. The standalone launcher follows Suite fallback policy once a character is loaded. Journal does not register a global hotkey. Notes remain local, per character, and are never logged or networked.");
         }
 
         private void InitializeConfigEntries()
@@ -104,9 +126,11 @@ namespace ErenshorJournal
             if (!ready)
             {
                 if (_open) CloseJournal();
+                else if (_dirty) SaveNow();
                 _characterKey = null;
                 _document = null;
                 _store = null;
+                if (_progressionBridge != null) _progressionBridge.ResetCharacter(string.Empty, Time.unscaledTime);
             }
             return ready;
         }
@@ -120,9 +144,20 @@ namespace ErenshorJournal
         private void EnsureCharacterContext()
         {
             string key = JournalCharacterIdentity.ResolveCharacterKey();
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                if (_dirty) SaveNow();
+                if (_open) CloseJournal();
+                _characterKey = null;
+                _document = null;
+                _store = null;
+                if (_progressionBridge != null) _progressionBridge.ResetCharacter(string.Empty, Time.unscaledTime);
+                if (_window != null) _window.ResetTransientState();
+                return;
+            }
             if (string.Equals(key, _characterKey, StringComparison.Ordinal)) return;
 
-            if (Diagnostics) Logging.LogInfo("[Journal][diag] character switch: '" + (_characterKey ?? "<none>") + "' -> '" + key + "'");
+            if (Diagnostics) Logging.LogInfo("[Journal][diag] character context changed.");
 
             if (_dirty) SaveNow();
             if (_open) CloseJournal();
@@ -136,12 +171,13 @@ namespace ErenshorJournal
             string characterPath = JournalPaths.CharacterJournalPath(baseDirectory, key);
 
             try { JournalLegacyMigration.ClaimIfEligible(legacyPath, characterPath, claimMarkerPath); }
-            catch (Exception ex) { Logging.LogError("Erenshor Journal legacy data migration failed for character '" + key + "': " + ex.GetType().Name + ": " + ex.Message); }
+            catch (Exception ex) { Logging.LogError("Erenshor Journal legacy data migration failed (" + ex.GetType().Name + ")."); }
 
             _store = new JournalStore(characterPath);
             string warning;
             _document = _store.Load(out warning);
-            if (!string.IsNullOrEmpty(warning)) Logging.LogWarning("Erenshor Journal recovered from unreadable local data for character '" + key + "'. " + warning);
+            if (!string.IsNullOrEmpty(warning)) Logging.LogWarning("Erenshor Journal recovered readable local data. " + warning);
+            if (_progressionBridge != null) _progressionBridge.ResetCharacter(_characterKey, Time.unscaledTime);
 
             // Rebuild transient UI state (scroll positions, delete-arm timers, cached styles/textures)
             // so nothing from the previous character's session lingers.
@@ -154,7 +190,7 @@ namespace ErenshorJournal
             {
                 bool ready = RefreshReadyState();
                 if (_pendingExternalClose) { _pendingExternalClose = false; if (_open) CloseJournal(); }
-                if (_pendingExternalOpen) { _pendingExternalOpen = false; if (ready && !_open) OpenJournal(); }
+                if (_pendingExternalOpen) { _pendingExternalOpen = false; if (ready) { if (_open) MarkPanelActivated(); else OpenJournal(); } }
                 if (_pendingLauncherToggle)
                 {
                     _pendingLauncherToggle = false;
@@ -168,10 +204,23 @@ namespace ErenshorJournal
                     {
                         PendingChronicleEntry pending;
                         bool appended = false;
-                        while (JournalApi.TryDequeue(out pending))
+                        int processed = 0;
+                        while (processed < MaximumChronicleIntegrationsPerFrame && JournalApi.TryDequeue(out pending))
                         {
-                            JournalCore.AppendChronicle(_document, pending.Source, pending.Category, pending.Text, pending.TimestampUtc);
-                            appended = true;
+                            processed++;
+                            if (pending == null || !string.Equals(pending.CharacterKey, _characterKey, StringComparison.Ordinal)) continue;
+                            if (JournalCore.AppendChronicleEvent(_document, pending.EventId, pending.Source, pending.Category,
+                                pending.Title, pending.Text, pending.TimestampUtc))
+                                appended = true;
+                        }
+                        if (_progressionBridge != null)
+                        {
+                            _progressionBridge.Tick(_characterKey, Time.unscaledTime, delegate(JournalProgressionMilestone milestone)
+                            {
+                                if (milestone == null) return;
+                                if (JournalCore.AppendChronicleEvent(_document, milestone.EventId, milestone.Source, milestone.Category,
+                                    milestone.Title, milestone.Text, DateTime.UtcNow)) appended = true;
+                            });
                         }
                         if (appended) MarkDirty();
                     }
@@ -196,7 +245,7 @@ namespace ErenshorJournal
             {
                 try { SuiteDragHandler.ForceReleaseIfOwned(); } catch { }
                 try { UpdatePlayerTyping(false); } catch { }
-                Logging.LogError("Erenshor Journal update failed: " + ex);
+                Logging.LogError("Erenshor Journal update failed (" + ex.GetType().Name + ").");
             }
         }
 
@@ -219,17 +268,24 @@ namespace ErenshorJournal
 
         private void OnDestroy()
         {
+            if (!_initialized) return;
+            _initialized = false;
             try { if (_auraProvider != null) _auraProvider.Unregister(); } catch { }
             _auraProvider = null;
             try { SaveNow(); } catch { }
             try { UpdatePlayerTyping(false); } catch { }
             try { NativeTypingOwnership.Reset(); } catch { }
+            try { JournalApi.ClearPending(); } catch { }
+            try { if (_progressionBridge != null) _progressionBridge.ResetForUnload(); } catch { }
             try { SuiteDragHandler.ForceReleaseIfOwned(); } catch { }
+            try { if (_harmony != null) _harmony.UnpatchSelf(); } catch { }
+            _harmony = null;
             try { if (_window != null) _window.Dispose(); } catch { }
             try { if (_launcher != null) _launcher.Dispose(); } catch { }
             try { if (_open) RestoreCursor(); } catch { }
             _window = null;
             _launcher = null;
+            _progressionBridge = null;
             _document = null;
             _store = null;
             _pendingLauncherToggle = false;
@@ -240,6 +296,7 @@ namespace ErenshorJournal
         }
 
         internal bool ControlPanelOpen { get { return _open; } }
+        internal double ControlPanelActivatedAt { get { return _panelActivatedAt; } }
         internal string ControlCharacterKey { get { return _characterKey ?? string.Empty; } }
         internal JournalDocument ControlDocument { get { return _document; } }
         internal bool ControlShowStandaloneLauncher { get { return _showStandaloneLauncherWithHub != null && _showStandaloneLauncherWithHub.Value; } }
@@ -263,8 +320,9 @@ namespace ErenshorJournal
 
         private void OpenJournal()
         {
-            if (_open) return;
+            if (_open) { MarkPanelActivated(); return; }
             _open = true;
+            MarkPanelActivated();
             _cursorVisibleBeforeOpen = Cursor.visible;
             _cursorLockBeforeOpen = Cursor.lockState;
             Cursor.visible = true;
@@ -274,9 +332,16 @@ namespace ErenshorJournal
         private void CloseJournal()
         {
             if (!_open) return;
+            SuiteDragHandler.ForceReleaseIfOwned();
             _open = false;
+            try { UpdatePlayerTyping(false); } catch { }
             SaveNow();
             RestoreCursor();
+        }
+
+        private void MarkPanelActivated()
+        {
+            _panelActivatedAt = Time.realtimeSinceStartup;
         }
 
         private void RestoreCursor()
@@ -305,7 +370,7 @@ namespace ErenshorJournal
             {
                 _dirty = true;
                 _saveAfter = Time.unscaledTime + 5f;
-                Logging.LogError("Erenshor Journal could not save local notes: " + ex.GetType().Name + ": " + ex.Message);
+                Logging.LogError("Erenshor Journal could not save local notes (" + ex.GetType().Name + ").");
             }
         }
 
@@ -332,8 +397,8 @@ namespace ErenshorJournal
         {
             if (_windowWidth == null || _windowHeight == null) return;
             if (float.IsNaN(width) || float.IsInfinity(width) || float.IsNaN(height) || float.IsInfinity(height)) return;
-            _windowWidth.Value = Mathf.Max(520f, width);
-            _windowHeight.Value = Mathf.Max(360f, height);
+            _windowWidth.Value = Mathf.Max(JournalWindow.MinimumWidth, width);
+            _windowHeight.Value = Mathf.Max(JournalWindow.MinimumHeight, height);
             try { Config.Save(); } catch { }
         }
 

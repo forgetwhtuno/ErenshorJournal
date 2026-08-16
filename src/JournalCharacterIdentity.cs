@@ -17,7 +17,9 @@ namespace ErenshorJournal
 
         internal static string ResolveCharacterKey()
         {
-            return JournalCharacterKey.Compose(PlayerName(), ResolveSlotIndex());
+            string name = PlayerName();
+            if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+            return JournalCharacterKey.Compose(name, ResolveSlotIndex());
         }
 
         internal static string PlayerName()
@@ -25,9 +27,9 @@ namespace ErenshorJournal
             try
             {
                 string name = GameData.PlayerControl.Myself.MyStats.MyName;
-                return string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim();
+                return string.IsNullOrWhiteSpace(name) ? string.Empty : name.Trim();
             }
-            catch { return "Player"; }
+            catch { return string.Empty; }
         }
 
         // Two save slots can hold the same character name, so persistence keys from the verified
