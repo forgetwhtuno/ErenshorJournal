@@ -1,5 +1,7 @@
 # Erenshor Journal
 
+Part of the **Forgotten Roads for Erenshor** mod collection.
+
 **Version:** 0.1.7 RC stabilization candidate
 **Author:** forgetwhtuno  
 **Loader:** native Lunaris (BepInEx is no longer required)  
@@ -153,7 +155,7 @@ Erenshor Journal is an unofficial community mod and is not affiliated with or en
 
 ## Optional Suite Hub integration
 
-Erenshor Suite Hub is **optional**. When it is installed, this mod can expose its normal player-facing controls there through the versioned public `JournalControlApi` surface. The mod remains independently usable without Suite Hub and does not compile against Hub types or assume Hub load order.
+Forgotten Roads Hub is **optional**. When it is installed, this mod can expose its normal player-facing controls there through the versioned public `JournalControlApi` surface. The mod remains independently usable without the Hub and does not compile against Hub types or assume Hub load order.
 
 Journal remains the dedicated notebook/editor. A compact standalone launcher is the safety fallback. It hides only when Suite Hub reports Ready with `uiAvailable=true`, this module bridge is registered, and the per-mod **Show launcher** setting is OFF. Missing/unavailable Hub UI forces the launcher visible for recovery; the Hub's manual interaction-validation bit is diagnostic only.
 
