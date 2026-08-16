@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8 - retained UI visual candidate
+
+- Added the canonical standalone launcher visual contract and retained Journal collapse/header behavior.
+- Preserved Chronicle persistence, camera ownership, and Suite fallback behavior.
+- Deterministic tests pass; fresh native build, plugin-identity audit, and live integrated UI validation remain required.
+
 ## 0.1.7 - RC camera containment
 
 - Added a fail-closed, monotonic postfix for the verified current `CameraController.UsingUI()` boundary. Journal raises native UI state only during an owned left-button move/resize gesture.

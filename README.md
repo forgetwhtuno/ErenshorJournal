@@ -78,7 +78,7 @@ plugins/ErenshorJournal.dll
 
 Lunaris manages enable/disable and config. A legacy BepInEx release remains available in this repository's Git history.
 
-**Status:** 0.1.7 is the RC camera/player-workflow candidate. Deterministic coverage includes manual-note isolation, structured Chronicle persistence, stable-event dedupe across reload, legacy-v1 loading, per-character separation, progression significance filtering, missing optional sibling behavior, CRUD/recovery, typing ownership, launcher policy, and safe drag/resize ownership. It compiles against the current installed Erenshor/Lunaris references; exact-candidate live gameplay and restart persistence remain required.
+**Status:** 0.1.8 is the retained-UI visual candidate. Deterministic coverage includes manual-note isolation, structured Chronicle persistence, stable-event dedupe across reload, legacy-v1 loading, per-character separation, progression significance filtering, missing optional sibling behavior, CRUD/recovery, typing ownership, launcher policy, collapse behavior, and safe drag/resize ownership. A fresh native compile, plugin-identity audit, and exact-candidate live gameplay/restart pass remain required.
 
 Erenshor Journal now uses retained Unity uGUI for its player-facing panel and launcher, so it no longer needs Harmony patches merely to protect UI clicks. It requests only Lunaris file access and makes no network calls. Current source does reference the verified Erenshor game types used for character readiness/identity and `GameData.PlayerTyping`; it does not patch native gameplay methods.
 
