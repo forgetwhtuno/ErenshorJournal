@@ -14,7 +14,7 @@ namespace ErenshorJournal
     {
         internal const string PluginGuid = "forgetwhtuno.erenshor.journal";
         internal const string PluginName = "Erenshor Journal";
-        internal const string PluginVersion = "0.1.7";
+        internal const string PluginVersion = "0.1.8";
         private const int MaximumChronicleIntegrationsPerFrame = 32;
 
         internal static ErenshorJournalPlugin Instance;

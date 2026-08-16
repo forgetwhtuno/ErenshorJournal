@@ -189,7 +189,7 @@ if ($ownershipSource -notmatch 'ProcessOwnersKey' -or $ownershipSource -notmatch
     $ownershipSource -match 'DraggingUIElement\s*=\s*false') {
     throw "Journal ownership guard failed: shared baseline restoration regressed."
 }
-if ($pluginSource -notmatch 'PluginVersion\s*=\s*"0\.1\.7"' -or $pluginSource -notmatch '_harmony\.PatchAll\(\)' -or
+if ($pluginSource -notmatch 'PluginVersion\s*=\s*"0\.1\.8"' -or $pluginSource -notmatch '_harmony\.PatchAll\(\)' -or
     $pluginSource -notmatch '_harmony\.UnpatchSelf\(\)') {
     throw "Journal camera lifecycle/version guard failed."
 }
@@ -202,3 +202,11 @@ if ($journalWindowSource -notmatch 'AddVerticalChevron\(_collapseChevron,\s*!_co
     throw "Journal release polish guard failed: glyph-safe collapse chevron is missing."
 }
 Write-Host "Journal release polish collapse-icon guard: PASS" -ForegroundColor Green
+$launcherVisual = Get-Content (Join-Path $ScriptRoot "src\StandaloneLauncherVisual.cs") -Raw
+$launcherSource = Get-Content (Join-Path $ScriptRoot "src\JournalLauncher.cs") -Raw
+if ($launcherVisual -notmatch 'Width\s*=\s*154f' -or $launcherVisual -notmatch 'Height\s*=\s*32f' -or
+    $launcherVisual -notmatch 'GripWidth\s*=\s*20f' -or $launcherVisual -notmatch '"GripDot"' -or
+    $launcherSource -notmatch 'StyleGrip\(grip\)' -or $launcherSource -notmatch 'StyleButton\(button, _label\)') {
+    throw "Journal Forgotten Roads launcher visual contract failed."
+}
+Write-Host "Journal Forgotten Roads launcher visual contract: PASS" -ForegroundColor Green

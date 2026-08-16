@@ -109,3 +109,7 @@ Initial preview release.
 - Kept standalone commands and core gameplay authority intact.
 - Documented the retained panel/launcher policy and Lunaris live-test requirement.
 - Strengthened fully-in-world gating, made the launcher Hub-aware fallback-only, deferred launcher/close state transitions out of `OnGUI`, and added panel Reset Position / whole-drag input capture while preserving native typing ownership.
+## 0.1.8 - Forgotten Roads launcher chrome
+
+- Standardized the standalone retained-uGUI launcher at 154x32 with programmatic grip marks and collection hover/pressed colors.
+- Standardized compact header naming while preserving drag, collapse, reset, close, position, and fallback behavior.

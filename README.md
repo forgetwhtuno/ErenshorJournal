@@ -2,7 +2,7 @@
 
 Part of the **Forgotten Roads for Erenshor** mod collection.
 
-**Version:** 0.1.7 RC stabilization candidate
+**Version:** 0.1.8 retained-UI visual candidate
 **Author:** forgetwhtuno  
 **Loader:** native Lunaris (BepInEx is no longer required)  
 **License:** Apache-2.0
@@ -148,7 +148,7 @@ To intentionally erase the saved notes too:
 
 ## Development note
 
-This project was developed with substantial AI-assisted coding and review. Gameplay authority and integration boundaries are intentionally kept deterministic and local.
+Gameplay authority and integration boundaries are intentionally kept deterministic and local.
 
 Erenshor Journal is an unofficial community mod and is not affiliated with or endorsed by Burgee Media.
 

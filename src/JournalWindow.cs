@@ -108,7 +108,7 @@ namespace ErenshorJournal
 
             AddCollapseButton(header);
 
-            TextMeshProUGUI title = RetainedUiKit.AddLabel("Title", header, "ERENSHOR JOURNAL", 15f, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
+            TextMeshProUGUI title = RetainedUiKit.AddLabel("Title", header, "JOURNAL", 15f, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
             RetainedUiKit.Stretch(title.rectTransform, 40f, 0f, 72f, 0f);
 
             Button resetButton = RetainedUiKit.AddButton("Reset", header, "R", reset, 28f, 24f, false);
