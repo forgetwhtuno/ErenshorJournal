@@ -16,6 +16,7 @@ namespace ErenshorJournal
         internal const string PluginName = "Erenshor Journal";
         internal const string PluginVersion = "0.1.8";
         private const int MaximumChronicleIntegrationsPerFrame = 32;
+        private const float UpdateErrorLogIntervalSeconds = 30f;
 
         internal static ErenshorJournalPlugin Instance;
         private bool _initialized;
@@ -47,6 +48,8 @@ namespace ErenshorJournal
         private bool _pendingLauncherToggle;
         private bool _cursorVisibleBeforeOpen;
         private CursorLockMode _cursorLockBeforeOpen;
+        private float _nextUpdateErrorLogAt;
+        private int _suppressedUpdateErrors;
 
         // True only once a real, local, playable character exists (see
         // JournalCharacterIdentity.IsLocalCharacterReady). Recomputed every frame; never cached
@@ -245,7 +248,7 @@ namespace ErenshorJournal
             {
                 try { SuiteDragHandler.ForceReleaseIfOwned(); } catch { }
                 try { UpdatePlayerTyping(false); } catch { }
-                Logging.LogError("Erenshor Journal update failed (" + ex.GetType().Name + ").");
+                LogUpdateFailure(ex);
             }
         }
 
@@ -265,6 +268,20 @@ namespace ErenshorJournal
             _forcedPlayerTyping = decision.NextForcedState;
         }
 
+
+        // A persistent Update failure would otherwise write one line per frame. Report the first
+        // one immediately, then at most one bounded summary per interval so a broken frame can
+        // never flood the shared Lunaris log.
+        private void LogUpdateFailure(Exception ex)
+        {
+            if (Time.unscaledTime < _nextUpdateErrorLogAt) { _suppressedUpdateErrors++; return; }
+            string suffix = _suppressedUpdateErrors > 0
+                ? " (" + _suppressedUpdateErrors + " similar failures suppressed since the last report)"
+                : string.Empty;
+            _suppressedUpdateErrors = 0;
+            _nextUpdateErrorLogAt = Time.unscaledTime + UpdateErrorLogIntervalSeconds;
+            try { Logging.LogError("Erenshor Journal update failed (" + ex.GetType().Name + ")." + suffix); } catch { }
+        }
 
         private void OnDestroy()
         {
@@ -291,6 +308,8 @@ namespace ErenshorJournal
             _pendingLauncherToggle = false;
             _pendingExternalOpen = false;
             _pendingExternalClose = false;
+            _nextUpdateErrorLogAt = 0f;
+            _suppressedUpdateErrors = 0;
             SuiteUiPolicy.Reset();
             if (Instance == this) Instance = null;
         }

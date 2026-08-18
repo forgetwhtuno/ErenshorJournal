@@ -1,10 +1,27 @@
 # Changelog
 
-## 0.1.8 - retained UI visual candidate
+## 0.1.8 - first public release
 
-- Added the canonical standalone launcher visual contract and retained Journal collapse/header behavior.
-- Preserved Chronicle persistence, camera ownership, and Suite fallback behavior.
-- Deterministic tests pass; fresh native build, plugin-identity audit, and live integrated UI validation remain required.
+**Added**
+- Standalone retained-uGUI launcher with programmatic grip marks and the shared Forgotten Roads hover/pressed colors.
+- Collapsible Journal header: collapsed Journal keeps only its draggable header plus Reset and Close, with the body and resize grip disabled until expanded.
+
+**Changed**
+- Standardized compact header naming while preserving drag, collapse, reset, close, position persistence, and Suite fallback behavior.
+- Chronicle persistence, per-character separation, and camera-gesture ownership are unchanged.
+
+**Fixed**
+- A persistent per-frame update failure now reports one bounded summary at most every 30 seconds instead of one log line per frame.
+- The project file now references `UnityEngine.UIModule` and `UnityEngine.IMGUIModule`, so `ErenshorJournal.csproj` builds from a clean checkout.
+
+**Compatibility**
+- Built against the currently installed Erenshor `Assembly-CSharp.dll` and Lunaris 0.1.0.
+- Fully standalone. Crafting Expanded, Suite Hub, and every other Forgotten Roads mod are optional; the progression bridge is reflection-only and fails closed when the sibling is absent.
+- Notes are stored per character under `plugins/config/ErenshorJournal/Characters/<character>/`. Existing notes and legacy global journals are preserved and migrated once, never deleted.
+- Supports Lunaris runtime enable/disable/reload.
+
+**Known limitations**
+- Lunaris lists the plugin under its stable identifier `forgetwhtuno.erenshor.journal` rather than a friendly display name. That identifier also names the config file, so it is deliberately left unchanged.
 
 ## 0.1.7 - RC camera containment
 
@@ -12,7 +29,7 @@
 - Unified move/resize ownership through the suite process registry, preserving the native pre-gesture value and never clearing a sibling owner.
 - Added physical-button, focus, pause, disable, destroy, readiness, close, zone, and unload cleanup plus deterministic source-contract guards.
 
-## Unreleased - bounded Suite UI polish
+## Pre-release development - bounded Suite UI polish
 
 - Aligned the retained Journal/launcher palette mechanically with the canonical dark/translucent/cyan Sim Actions tokens and added a thin cyan frame.
 - Added a consistent `▾` / `▸` header collapse control. Collapsed Journal keeps only the draggable 32px header plus Reset/Close; body and resize grip are disabled until expanded.
@@ -59,7 +76,7 @@
 - Added retained-panel screen fitting for small resolutions and lowered the normal minimum panel size to 440x320 while keeping resize/drag persistence.
 - Added tests for Chronicle dedupe/bounds, selected-tab persistence, CRUD editing, and partial malformed-record recovery.
 
-## Unreleased - retained uGUI / content-utility polish
+## Pre-release development - retained uGUI / content-utility polish
 
 - Fixed the top action row so Timestamp / Copy / Delete no longer overlap; Copy has a dedicated non-clipped slot.
 - Empty editable tabs now show the understated placeholder `No entries.` instead of an unexplained blank region.
@@ -70,7 +87,7 @@
 - Corrected stale testing/migration text that still described the superseded IMGUI/Harmony intermediate build.
 - `closePanel` remains available through the Suite Aura action and `ui.state` now reports open/closeable/sort-order/activation state for the centralized quick-close contract; no independent Escape handler was added.
 
-## Unreleased (native Lunaris migration history)
+## Pre-release development (native Lunaris migration history)
 
 - Converted the plugin host from BepInEx to native Lunaris and moved local data under `plugins/config/ErenshorJournal/`.
 - Replaced BepInEx config/logging with native Lunaris config/logging.
@@ -109,13 +126,9 @@ Initial preview release.
 - No Harmony patches, no `Assembly-CSharp.dll` dependency, no networking, no AI, and no automatic quest inference.
 
 
-## Unreleased - Suite UI/API coherence handoff
+## Pre-release development - Suite UI/API coherence handoff
 
 - Added optional, versioned `JournalControlApi` discovery/control surface for Suite Hub without a hard Hub dependency.
 - Kept standalone commands and core gameplay authority intact.
 - Documented the retained panel/launcher policy and Lunaris live-test requirement.
 - Strengthened fully-in-world gating, made the launcher Hub-aware fallback-only, deferred launcher/close state transitions out of `OnGUI`, and added panel Reset Position / whole-drag input capture while preserving native typing ownership.
-## 0.1.8 - Forgotten Roads launcher chrome
-
-- Standardized the standalone retained-uGUI launcher at 154x32 with programmatic grip marks and collection hover/pressed colors.
-- Standardized compact header naming while preserving drag, collapse, reset, close, position, and fallback behavior.

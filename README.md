@@ -59,9 +59,45 @@ The mod performs **no networking** and never writes journal contents to the log.
 
 A `.bak` copy is maintained during successful replacements. The temporary file is flushed before replacement. If a structurally complete `.tmp` is newer than an older readable main, Journal treats it as an interrupted pre-replace save and recovers it; partial temps never pass validation. If the main file is missing or unreadable, Journal validates both `.bak` and complete `.tmp` recovery candidates and chooses the newest readable one; an unreadable main is preserved as a timestamped `.corrupt-*` copy first. Only when no candidate is readable does it open a fresh default journal.
 
-## Installation / build
+## Installation
 
-This version requires **native Lunaris** — BepInEx is no longer required. This source package intentionally does not redistribute Erenshor or Lunaris assemblies.
+Journal requires **Lunaris**. BepInEx is not required, and nothing else needs to be installed —
+Lunaris already ships Harmony.
+
+**Lunaris (recommended)**
+
+1. Install Lunaris for Erenshor and launch the game once so the loader sets itself up.
+2. Open the Lunaris plugin installer in game.
+3. Search for **Erenshor Journal** and install it.
+4. Enable the plugin.
+
+**Manual**
+
+Download the release archive and copy **only** `ErenshorJournal.dll` into the `plugins` folder next
+to `Erenshor.exe`. The `README.md`, `CHANGELOG.md`, `LICENSE`, and `NOTICE` files in the archive are
+documentation — do not copy them into `plugins`.
+
+## Updating
+
+Install the new version the same way and let it replace `ErenshorJournal.dll`. Your notes live under
+`plugins/config/ErenshorJournal/Characters/<character>/` and your settings in
+`plugins/config/forgetwhtuno.erenshor.journal.lpcfg`. Both are preserved across updates; Journal
+never deletes your notes.
+
+## Configuration
+
+Settings are edited through Lunaris (or Suite Hub, if installed). The defaults are safe for normal
+play:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `ShowStandaloneLauncherWithHub` | on | Show the on-screen Journal launcher even when Suite Hub is present. Forced visible whenever Hub is absent or unusable, so Journal is never unreachable. |
+| `WindowX/Y`, `WindowWidth/Height`, `LauncherX/Y` | auto | Remembered window position and size. |
+| `DiagnosticsLogging` | off | Extra developer logging. Leave off for normal play. |
+
+## Build from source
+
+This source package intentionally does not redistribute Erenshor, Unity, or Lunaris assemblies.
 
 1. Install Lunaris for Erenshor and launch the game modded once.
 2. Run:
@@ -78,9 +114,22 @@ plugins/ErenshorJournal.dll
 
 Lunaris manages enable/disable and config. A legacy BepInEx release remains available in this repository's Git history.
 
-**Status:** 0.1.8 is the retained-UI visual candidate. Deterministic coverage includes manual-note isolation, structured Chronicle persistence, stable-event dedupe across reload, legacy-v1 loading, per-character separation, progression significance filtering, missing optional sibling behavior, CRUD/recovery, typing ownership, launcher policy, collapse behavior, and safe drag/resize ownership. A fresh native compile, plugin-identity audit, and exact-candidate live gameplay/restart pass remain required.
+Erenshor Journal now uses retained Unity uGUI for its player-facing panel and launcher, so it no longer needs Harmony patches merely to protect UI clicks. It makes no network calls.
 
-Erenshor Journal now uses retained Unity uGUI for its player-facing panel and launcher, so it no longer needs Harmony patches merely to protect UI clicks. It requests only Lunaris file access and makes no network calls. Current source does reference the verified Erenshor game types used for character readiness/identity and `GameData.PlayerTyping`; it does not patch native gameplay methods.
+### Permissions
+
+Journal requests three Lunaris permissions, each for a narrow purpose:
+
+- **FileAccess** — saving and loading your journal on this machine. Nothing is uploaded.
+- **Reflection** — reading the verified native types used for character readiness/identity and
+  `GameData.PlayerTyping`, and proving the camera compatibility seam below before it is used.
+- **Harmony** — one patch only: a postfix on `CameraController.UsingUI()` that stops a Journal
+  window drag from also turning the game camera. It can only change `false` to `true`, never the
+  reverse, and only while Journal actually owns a live left-button pointer gesture. The patch
+  verifies the exact installed method shape first and simply does not apply if the game no longer
+  matches, leaving native camera behavior untouched.
+
+Journal does not patch gameplay, combat, quests, inventory, progression, or networking behavior.
 
 Typing into the Journal's tab-name field or note text area also sets the real native `GameData.PlayerTyping` flag while a Journal text control has focus, so WASD/hotkeys don't fire while you're writing a note — the same mechanism Erenshor's own chat box and windows (Bank, Auction House, Guild Manager, Raid save, Quest Log) already use. Journal never clears that flag unless it verifiably owns the current assertion and no other native typing owner is still active, so it can't clobber native chat or another window's typing state.
 
@@ -161,8 +210,15 @@ Journal remains the dedicated notebook/editor. A compact standalone launcher is 
 
 Hub can show only bounded notebook/Chronicle counts/status and open or close Journal; it does not receive character keys, tab names, note text, copied text, or Chronicle text.
 
-The shared control/API and fully-in-world UI policy in this handoff are source-validated but **not yet live-tested under Lunaris hot reload**.
-
 ### Content/UI migration candidate
 
-The current Journal player UI uses retained Unity uGUI. The Suite Hub bridge exposes **Show Journal Launcher** and Open/Close/Reset actions without exposing note contents, plus bounded `ui.state` metadata for centralized quick-close ordering. The standalone launcher is forced visible whenever Hub or the Journal bridge is unusable. Native compile and live Lunaris UI/reload verification remain part of the release checklist.
+The current Journal player UI uses retained Unity uGUI. The Suite Hub bridge exposes **Show Journal Launcher** and Open/Close/Reset actions without exposing note contents, plus bounded `ui.state` metadata for centralized quick-close ordering. The standalone launcher is forced visible whenever Hub or the Journal bridge is unusable.
+
+## Support / issues
+
+Please report bugs and feature requests on the
+[GitHub issue tracker](https://github.com/forgetwhtuno/ForgottenRoadsJournal/issues).
+
+## License
+
+See [LICENSE](LICENSE) and [NOTICE](NOTICE).
