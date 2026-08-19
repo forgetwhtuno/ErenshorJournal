@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.1.11 - UI workspace normalization
+
+- Removed the text-only "[OPEN]" suffix from the JOURNAL launcher label (it now always reads
+  "JOURNAL"). Open/active state is instead a small structural cue shared with the Follow/Duel
+  standalone launchers: a filled accent bar along the launcher's top edge, present only while the
+  panel is open - not a color-only signal.
+- New default (and Reset) window position: the window's top-right corner lines up with the shared
+  right-side workspace anchor below the launcher column, instead of the old dead-center 0.5/0.5
+  default. An existing saved position and size are never touched by this - only the default used
+  when no valid saved position exists, and the Reset target, changed. Window size (720x560 default)
+  is unchanged; it is a legitimate content-appropriate size for a full note/chronicle editor, not
+  something this pass judged as oversized.
+- Fixed the shared launcher-column right margin: the previous 0.006 normalized value was smaller
+  than the launcher's own 154px width at every realistic screen resolution, so the position-resolve
+  clamp silently erased it, leaving the launcher flush against the very edge of the screen. It now
+  resolves to a real, small, safe margin instead.
+- Reordered the shared launcher column to Journal(0) / Duel(1) / Follow(2), top to bottom.
+- Added `StandaloneLauncherColumnPolicy.DefaultPanelTopNormalized()`/`DefaultPanelRightNormalized()`
+  (mirrored across Journal/Follow/Duel's copies) so all three modules' default utility-panel
+  workspace shares one coherent anchor below the launcher rail instead of three unrelated screen
+  locations.
+
+## 0.1.10 - shared standalone-launcher visual/placement pass
+
+- New default launcher position: a vertical right-side column beneath the native minimap area,
+  replacing the old `(0.86, 0.82)` default so Journal, Follow, and Duel launchers occupy fixed,
+  non-overlapping slots (Journal is slot 0, the topmost) instead of drifting toward the same
+  lower-right area independently. No stable minimap `RectTransform` exists in the installed assembly
+  to derive an exact lower edge from, so the column uses a resolution-independent top-right anchor
+  with a conservative fixed inset.
+- Any existing saved launcher position is preserved exactly - only installs that have never moved the
+  launcher (still at the `Unset` sentinel) pick up the new default.
+- Added `src/StandaloneLauncherColumnPolicy.cs`, the canonical per-module copied placement policy also
+  used by Follow and Duel's shared fallback launcher, which now matches Journal's launcher chrome.
+
+## 0.1.9 - standalone launcher grip repair
+
+**Fixed**
+- The standalone launcher's left drag grip used a vertically stretched anchor (`anchorMin.y=0`,
+  `anchorMax.y=1`) together with `StandaloneLauncherVisual.StyleGrip`, which sets `sizeDelta =
+  (GripWidth, Height)` as an absolute size. On a stretched anchor, `sizeDelta.y` is an *additive*
+  offset on top of the already-parent-matched height instead, so the grip's real height doubled to
+  64px and, with `pivot.y = 0`, the extra 32px rendered entirely above the visible launcher as an
+  oversized cyan strip with an equally oversized invisible pointer/raycast target. Dragging from
+  that region behaved inconsistently because the effective hit area no longer matched the visible
+  launcher bounds.
+- `JournalLauncher` now builds the grip with fixed (non-stretch) anchors via
+  `RetainedUiKit.AnchorBottomLeft`, matching the sizing contract `StyleGrip` already assumed. The
+  grip is now exactly `20x32`, fully inside the launcher's own `154x32` bounds, with no strip
+  projecting above or below it. Drag behavior, pointer ownership, position clamping/persistence,
+  and Journal note/Chronicle behavior are unchanged.
+
 ## 0.1.8 - first public release
 
 **Added**

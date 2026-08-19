@@ -71,6 +71,18 @@ namespace ErenshorJournal
             }
         }
 
+        // Open/active-state indicator shared with the other Forgotten Roads standalone launchers
+        // (see StandaloneFallbackUi.cs): a filled bar along the launcher's top edge, toggled active
+        // only while the panel is open. A structural element rather than only a color swap, so
+        // open/closed reads even without color perception. Caller toggles the returned GameObject.
+        internal static GameObject AddOpenAccent(RectTransform launcherRoot)
+        {
+            RectTransform accent = AddBlock("OpenAccent", launcherRoot, new Vector2(Width - GripWidth - 2f, 3f),
+                new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(GripWidth + (Width - GripWidth) * 0.5f, Height - 1.5f));
+            accent.gameObject.SetActive(false);
+            return accent.gameObject;
+        }
+
         internal static RectTransform AddVerticalChevron(RectTransform parent, bool pointsUp)
         {
             RectTransform icon = AddRect("Chevron", parent, new Vector2(12f, 10f),

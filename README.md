@@ -2,7 +2,7 @@
 
 Part of the **Forgotten Roads for Erenshor** mod collection.
 
-**Version:** 0.1.8 retained-UI visual candidate
+**Version:** 0.1.11 UI workspace normalization release candidate
 **Author:** forgetwhtuno  
 **Loader:** native Lunaris (BepInEx is no longer required)  
 **License:** Apache-2.0
