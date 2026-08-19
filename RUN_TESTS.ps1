@@ -189,7 +189,7 @@ if ($ownershipSource -notmatch 'ProcessOwnersKey' -or $ownershipSource -notmatch
     $ownershipSource -match 'DraggingUIElement\s*=\s*false') {
     throw "Journal ownership guard failed: shared baseline restoration regressed."
 }
-if ($pluginSource -notmatch 'PluginVersion\s*=\s*"0\.1\.8"' -or $pluginSource -notmatch '_harmony\.PatchAll\(\)' -or
+if ($pluginSource -notmatch 'PluginVersion\s*=\s*"0\.1\.11"' -or $pluginSource -notmatch '_harmony\.PatchAll\(\)' -or
     $pluginSource -notmatch '_harmony\.UnpatchSelf\(\)') {
     throw "Journal camera lifecycle/version guard failed."
 }
@@ -210,3 +210,74 @@ if ($launcherVisual -notmatch 'Width\s*=\s*154f' -or $launcherVisual -notmatch '
     throw "Journal Forgotten Roads launcher visual contract failed."
 }
 Write-Host "Journal Forgotten Roads launcher visual contract: PASS" -ForegroundColor Green
+
+# Regression guard for the 0.1.9 launcher-grip drag defect: the grip must use FIXED anchors
+# (AnchorBottomLeft), not a vertically stretched anchor. StyleGrip sets grip.sizeDelta to an
+# ABSOLUTE (GripWidth, Height) size; on a stretched Y anchor that same assignment becomes an
+# ADDITIVE offset on top of the parent-matched height, which previously doubled the grip's real
+# height and, with pivot.y = 0, pushed the extra height entirely above the visible launcher.
+if ($launcherSource -notmatch 'AnchorBottomLeft\(grip,\s*0f,\s*0f,\s*StandaloneLauncherVisual\.GripWidth,\s*Height\)') {
+    throw "Journal launcher grip guard failed: grip is not built with AnchorBottomLeft's fixed anchors."
+}
+if ($launcherSource -match 'grip\.anchorMax\s*=\s*new Vector2\(0f,\s*1f\)') {
+    throw "Journal launcher grip guard failed: grip reintroduces a vertically stretched anchor."
+}
+Write-Host "Journal launcher grip anchor regression guard: PASS" -ForegroundColor Green
+
+# Shared right-side standalone-launcher column policy: pure geometry/slot math, no UnityEngine
+# dependency. See src/StandaloneLauncherColumnPolicy.cs.
+$columnOut = Join-Path $env:TEMP "ErenshorJournal.StandaloneLauncherColumnPolicyTests.exe"
+& $csc /nologo /target:exe /out:$columnOut `
+    (Join-Path $ScriptRoot "src\StandaloneLauncherColumnPolicy.cs") `
+    (Join-Path $ScriptRoot "tests\StandaloneLauncherColumnPolicyTests.cs")
+if ($LASTEXITCODE -ne 0) { throw "Journal standalone launcher column policy tests did not compile." }
+& $columnOut
+if ($LASTEXITCODE -ne 0) { throw "Journal standalone launcher column policy tests failed." }
+
+# Right-side default placement source contract: JournalLauncher must derive its default position
+# from the shared column policy, not a hardcoded constant (the pre-existing 0.86/0.82 lower-right
+# default this task replaces with a deterministic per-module column slot).
+if ($launcherSource -notmatch 'StandaloneLauncherColumnPolicy\.DefaultX\(\)' -or
+    $launcherSource -notmatch 'StandaloneLauncherColumnPolicy\.DefaultY\(StandaloneLauncherColumnPolicy\.SlotIndex\)') {
+    throw "Journal launcher placement guard failed: launcher default is not derived from StandaloneLauncherColumnPolicy."
+}
+if ($launcherSource -match 'new RetainedPosition\([^,]+,[^,]+,\s*0\.86f,\s*0\.82f') {
+    throw "Journal launcher placement guard failed: old hardcoded lower-right default constant is still present."
+}
+Write-Host "Journal right-side launcher placement source guard: PASS" -ForegroundColor Green
+
+# UI workspace normalization pass: launcher label stays stable regardless of open state; open/
+# active is a structural cue (accent bar), never a text suffix; default window position comes from
+# the shared right-side workspace anchors, not the old dead-center 0.5/0.5 constant.
+$journalWindowSource2 = Get-Content (Join-Path $ScriptRoot "src\JournalWindow.cs") -Raw
+$launcherVisualSource2 = Get-Content (Join-Path $ScriptRoot "src\StandaloneLauncherVisual.cs") -Raw
+if ($launcherSource -match '_label\.text\s*=[^;]*\[OPEN\]') {
+    throw "Launcher open-state guard failed: JournalLauncher still injects a text-only [OPEN] suffix into its label."
+}
+if ($launcherSource -notmatch '_label\.text = "JOURNAL";') {
+    throw "Launcher open-state guard failed: the JOURNAL label is no longer stable regardless of open state."
+}
+if ($launcherSource -notmatch '_openAccent\.SetActive\(open\)' -or $launcherSource -notmatch 'StandaloneLauncherVisual\.AddOpenAccent\(_panel\)') {
+    throw "Launcher open-state guard failed: structural open/active accent is missing."
+}
+if ($launcherVisualSource2 -notmatch 'internal static GameObject AddOpenAccent') {
+    throw "Launcher open-state guard failed: shared AddOpenAccent helper is missing from StandaloneLauncherVisual."
+}
+if ($journalWindowSource2 -match 'new RetainedPosition\(storedX, storedY, 0\.5f, 0\.5f, persist\)') {
+    throw "Journal window default-position guard failed: old dead-center 0.5f/0.5f default constant is still wired in."
+}
+if ($journalWindowSource2 -notmatch 'ComputeDefaultPosition\(width, height, out defaultX, out defaultY\)' -or
+    $journalWindowSource2 -notmatch 'StandaloneLauncherColumnPolicy\.DefaultPanelRightNormalized\(\)' -or
+    $journalWindowSource2 -notmatch 'StandaloneLauncherColumnPolicy\.DefaultPanelTopNormalized\(\)') {
+    throw "Journal window default-position guard failed: default position is not derived from the shared workspace anchors."
+}
+# Do NOT overwrite existing saved size: PersistWindowSize/WindowWidth/WindowHeight wiring must
+# remain the sole size source, and this pass must not touch it.
+$journalPluginSource = Get-Content (Join-Path $ScriptRoot "src\ErenshorJournalPlugin.cs") -Raw
+if ($journalPluginSource -notmatch '_windowWidth\.Value, _windowHeight\.Value') {
+    throw "Journal saved-size guard failed: window Initialize no longer sources width/height from persisted settings."
+}
+if ((Get-Content (Join-Path $ScriptRoot "src\JournalSettings.cs") -Raw) -notmatch 'WindowWidth = 720f') {
+    throw "Journal saved-size guard failed: default WindowWidth setting changed unexpectedly."
+}
+Write-Host "Journal UI workspace normalization guard: PASS" -ForegroundColor Green

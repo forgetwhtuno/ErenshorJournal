@@ -45,5 +45,24 @@ namespace ErenshorJournal
             float available = Math.Max(1f, screenExtent - (Math.Max(0f, margin) * 2f));
             return Math.Min(safePreferred, available);
         }
+
+        // Pure point-anchor rect math (anchorMin == anchorMax on both axes - no stretch). This is
+        // the launcher and drag-grip anchor mode since 0.1.9: sizeDelta is the element's absolute
+        // size, and anchoredPosition places its pivot point at that offset from the parent's
+        // bottom-left corner. Kept Unity-free so the launcher's drag-target geometry contract (a
+        // dedicated grip/accent area must fit entirely inside the launcher bounds) can be proven by
+        // computation instead of only by source-text matching, since UnityEngine.RectTransform is
+        // not available to this standalone test binary.
+        internal static bool RectFitsWithinParent(float parentWidth, float parentHeight,
+            float childX, float childY, float childWidth, float childHeight, float pivotX, float pivotY)
+        {
+            if (childWidth < 0f || childHeight < 0f) return false;
+            float left = childX - (childWidth * pivotX);
+            float right = left + childWidth;
+            float bottom = childY - (childHeight * pivotY);
+            float top = bottom + childHeight;
+            const float epsilon = 0.01f;
+            return left >= -epsilon && bottom >= -epsilon && right <= parentWidth + epsilon && top <= parentHeight + epsilon;
+        }
     }
 }

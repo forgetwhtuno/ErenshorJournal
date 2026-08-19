@@ -89,7 +89,9 @@ namespace ErenshorJournal
             BuildPage();
             BuildChronicle();
 
-            _position = new RetainedPosition(storedX, storedY, 0.5f, 0.5f, persist);
+            float defaultX, defaultY;
+            ComputeDefaultPosition(width, height, out defaultX, out defaultY);
+            _position = new RetainedPosition(storedX, storedY, defaultX, defaultY, persist);
             _position.Resolve(_panel);
             SuiteResizeHandler resize = RetainedUiKit.AddResizeGrip("ResizeGrip", _panel, _panel, 16f, new Vector2(MinimumWidth, MinimumHeight), ResizeCompleted);
             _resizeGripRoot = resize == null ? null : resize.gameObject;
@@ -285,6 +287,24 @@ namespace ErenshorJournal
         internal void ResetPosition()
         {
             if (_position != null) _position.Reset(_panel);
+        }
+
+        // Canonical default (and Reset target): the window's top-right corner lines up with the
+        // shared right-side workspace anchor below the launcher rail, instead of the old dead-
+        // center 0.5/0.5 default that put a large editor far from its launcher. Only used when
+        // there is no valid saved position (RetainedPosition.Resolve/Reset); an existing saved
+        // position and size are never altered by this. Recomputed from live Screen dimensions and
+        // the already-resolved panel width/height, so it stays correct at any resolution.
+        private static void ComputeDefaultPosition(float resolvedWidth, float resolvedHeight, out float defaultX, out float defaultY)
+        {
+            defaultX = 0.5f; defaultY = 0.5f;
+            if (Screen.width <= 0 || Screen.height <= 0) return;
+            float rightPixels = StandaloneLauncherColumnPolicy.DefaultPanelRightNormalized() * Screen.width;
+            float topPixels = StandaloneLauncherColumnPolicy.DefaultPanelTopNormalized() * Screen.height;
+            float leftPixels = Mathf.Max(0f, rightPixels - resolvedWidth);
+            float bottomPixels = Mathf.Max(0f, topPixels - resolvedHeight);
+            defaultX = leftPixels / Screen.width;
+            defaultY = bottomPixels / Screen.height;
         }
 
         internal void ResetTransientState()

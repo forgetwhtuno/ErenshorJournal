@@ -13,6 +13,7 @@ namespace ErenshorJournal
         private GameObject _root;
         private RectTransform _panel;
         private TextMeshProUGUI _label;
+        private GameObject _openAccent;
         private RetainedPosition _position;
         private Action _toggle;
 
@@ -26,12 +27,13 @@ namespace ErenshorJournal
             RetainedUiKit.AnchorBottomLeft(_panel, 0f, 0f, Width, Height);
             RetainedUiKit.AddImage(_panel, RetainedUiKit.Panel);
 
+            // Fixed (non-stretch) anchors, matching what StandaloneLauncherVisual.StyleGrip below
+            // assumes: it sets grip.sizeDelta = (GripWidth, Height) as an ABSOLUTE size. A vertically
+            // stretched anchor (anchorMin.y=0, anchorMax.y=1) treats sizeDelta.y as an ADDITIVE offset
+            // on top of the already-parent-matched height instead, which previously doubled the grip's
+            // height to 64 and, with pivot.y=0, pushed the extra 32px entirely above the launcher.
             RectTransform grip = RetainedUiKit.CreateRect("DragGrip", _panel);
-            grip.anchorMin = Vector2.zero;
-            grip.anchorMax = new Vector2(0f, 1f);
-            grip.pivot = Vector2.zero;
-            grip.anchoredPosition = Vector2.zero;
-            grip.sizeDelta = new Vector2(20f, 0f);
+            RetainedUiKit.AnchorBottomLeft(grip, 0f, 0f, StandaloneLauncherVisual.GripWidth, Height);
             RetainedUiKit.AddImage(grip, RetainedUiKit.Header);
             TextMeshProUGUI diamond = RetainedUiKit.AddLabel("GripLabel", grip, "◇", 14f, FontStyles.Bold, TextAlignmentOptions.Center);
             RetainedUiKit.Stretch(diamond.rectTransform, 0f, 0f, 0f, 0f);
@@ -50,8 +52,12 @@ namespace ErenshorJournal
             _label = button.GetComponentInChildren<TextMeshProUGUI>();
             StandaloneLauncherVisual.StyleButton(button, _label);
             StandaloneLauncherVisual.StyleRoot(_panel);
+            _openAccent = StandaloneLauncherVisual.AddOpenAccent(_panel);
 
-            _position = new RetainedPosition(storedX, storedY, 0.86f, 0.82f, persist);
+            _position = new RetainedPosition(storedX, storedY,
+                StandaloneLauncherColumnPolicy.DefaultX(),
+                StandaloneLauncherColumnPolicy.DefaultY(StandaloneLauncherColumnPolicy.SlotIndex),
+                persist);
             SuiteDragHandler drag = grip.gameObject.AddComponent<SuiteDragHandler>();
             drag.Target = _panel;
             drag.OnDragCompleted = delegate { if (_position != null) _position.DragCompleted(_panel); };
@@ -65,7 +71,11 @@ namespace ErenshorJournal
             if (_root.activeSelf != visible) _root.SetActive(visible);
             if (!visible) return;
             if (_position != null) _position.Resolve(_panel);
-            if (_label != null) _label.text = open ? "JOURNAL [OPEN]" : "JOURNAL";
+            // The module name stays stable regardless of open state; open/active is communicated
+            // structurally (see StandaloneLauncherVisual.AddOpenAccent), matching the other two
+            // Forgotten Roads standalone launchers instead of a text-only "[OPEN]" suffix.
+            if (_label != null) _label.text = "JOURNAL";
+            if (_openAccent != null) _openAccent.SetActive(open);
         }
 
         internal void ResetPosition()
@@ -79,6 +89,7 @@ namespace ErenshorJournal
             RetainedUiKit.DestroyRoot(ref _root);
             _panel = null;
             _label = null;
+            _openAccent = null;
             _position = null;
             _toggle = null;
         }
